@@ -4,8 +4,24 @@ export default async function handler(req, res) {
 
     try {
         const response = await fetch(targetUrl, {
-            headers: { 'User-Agent': 'XSOCIETY-HUB/1.0' }
+            headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://mangadex.org/'
+            }
         });
+        
+        const contentType = response.headers.get('content-type');
+
+        // JIKA YANG DIMINTA ADALAH GAMBAR, PROXY GAMBARNYA (Bypass blokir ISP)
+        if (contentType && contentType.startsWith('image/')) {
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.send(buffer);
+        }
+
+        // JIKA JSON (API MangaDex)
         let data = await response.json();
 
         if (data && data.data) {
@@ -30,7 +46,7 @@ export default async function handler(req, res) {
             if (Array.isArray(data.data)) {
                 await Promise.all(data.data.map(processManga));
                 
-                // Sortir Chapter Angka (Biar 1, 2, 3 bukan 10, 2)
+                // Sortir Chapter 1, 2, 3...
                 if (data.data.length > 0 && data.data[0].type === 'chapter') {
                     data.data.sort((a, b) => {
                         let numA = parseFloat(a.attributes.chapter);
