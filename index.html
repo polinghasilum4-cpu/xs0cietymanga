@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XSOCIETY HUB — Baca Manga</title>
+    <title>xs0ciety505 — Baca Manga</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90' fill='%23e50914' font-weight='900' font-family='Arial'%3EX%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -11,9 +11,6 @@
     <nav class="navbar-top" id="navbarTop">
         <h1 class="logo" onclick="window.location.reload()"><span class="red">XSOCIETY</span>HUB</h1>
         <div class="nav-actions">
-            <select id="langSelect" class="lang-select" style="display: none;">
-                <!-- Language selector hidden as we merge ID & EN now -->
-            </select>
             <div class="search-box-top">
                 <input type="text" id="searchInput" placeholder="Cari manga...">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
@@ -93,7 +90,9 @@
         <div class="modal-content">
             <button class="modal-close" id="closeModal">&times;</button>
             <div class="modal-body">
-                <img id="modalImg" src="" alt="Cover">
+                <div class="modal-img-wrapper">
+                    <img id="modalImg" src="" alt="Cover">
+                </div>
                 <div class="modal-info">
                     <h3 id="modalTitle"></h3>
                     <p id="modalSynopsis"></p>
