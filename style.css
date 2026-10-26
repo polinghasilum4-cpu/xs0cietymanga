@@ -141,3 +141,6 @@ button { font-family: inherit; }
 .reader-content { padding-top: 56px; }
 .reader-next { gap: 10px; }
 .reader-next .btn { flex: 1; width: auto; }
+
+.chapter-btn.disabled { opacity: 0.45; cursor: not-allowed; }
+.chapter-btn.disabled:hover { background: #222; border-color: #333; color: var(--text); transform: none; }

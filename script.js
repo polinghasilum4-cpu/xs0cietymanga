@@ -15,8 +15,8 @@ let chapterDesc = false;       // urutan tampilan daftar chapter
 let currentType = 'all';
 let popularOffset = 0;
 let popularTotal = 0;
-let currentLang = localStorage.getItem('lang') || 'all'; // id | en | all (ID dulu, EN melengkapi)
-if (!['id', 'en', 'all'].includes(currentLang)) currentLang = 'all';
+let currentLang = localStorage.getItem('lang') || 'any'; // any = semua bahasa (ID > EN > lainnya) | all = ID+EN | id | en
+if (!['any', 'id', 'en', 'all'].includes(currentLang)) currentLang = 'any';
 
 // token untuk membatalkan respon basi (user klik cepat / ganti bahasa)
 let popularToken = 0, chapterToken = 0, readToken = 0, searchToken = 0;
@@ -84,7 +84,7 @@ const pickDesc = (m) => {
     const d = m.attributes.description || {};
     return d.id || d.en || Object.values(d)[0] || 'Sinopsis tidak tersedia.';
 };
-const langList = () => currentLang === 'all' ? ['id', 'en'] : [currentLang];
+const langList = () => currentLang === 'any' ? [] : currentLang === 'all' ? ['id', 'en'] : [currentLang];
 const langQuery = (key) => langList().map(l => `&${key}[]=${l}`).join('');
 
 /* ---------- BGM ---------- */
@@ -204,7 +204,7 @@ window._openManga = async (id) => {
 // ambil SEMUA halaman feed (limit API 500/halaman, total dibaca dari respon)
 async function fetchAllChapters(mangaId) {
     const base = `/manga/${mangaId}/feed?limit=500&order[volume]=asc&order[chapter]=asc&includeFutureUpdates=0`
-        + RATINGS + langQuery('translatedLanguage');
+        + RATINGS + '&contentRating[]=pornographic' + langQuery('translatedLanguage');
     let offset = 0, all = [], total = Infinity;
     while (offset < total && offset < 9500) {              // batas API: offset+limit <= 10000
         const json = await proxyFetch(`${base}&offset=${offset}`);
@@ -221,7 +221,7 @@ async function fetchAllChapters(mangaId) {
 function chapterScore(ch) {
     const a = ch.attributes;
     const readable = !a.externalUrl && (a.pages || 0) > 0;
-    const langPref = currentLang === 'all' ? (a.translatedLanguage === 'id' ? 1 : 0) : 0;
+    const langPref = a.translatedLanguage === 'id' ? 2 : a.translatedLanguage === 'en' ? 1 : 0;
     return [readable ? 1 : 0, langPref, a.pages || 0, Date.parse(a.publishAt) || 0];
 }
 function better(a, b) {
@@ -293,23 +293,24 @@ window.loadChapters = loadChapters;
 
 function renderChapterList() {
     if (!chapterFeed.length) {
-        const where = currentLang === 'all' ? 'ID/EN' : currentLang.toUpperCase();
+        const where = { any: '', all: ' ID/EN', id: ' ID', en: ' EN' }[currentLang];
         chapterCount.textContent = '';
-        chapterList.innerHTML = `<p class="muted-msg">Chapter bahasa ${where} belum tersedia.</p>`;
+        chapterList.innerHTML = `<p class="muted-msg">Chapter${where} belum tersedia.</p>`;
         return;
     }
-    chapterCount.textContent = `${chapterFeed.length} chapter`;
+    const readable = chapterFeed.filter(c => !c.attributes.externalUrl).length;
+    chapterCount.textContent = `${chapterFeed.length} chapter · ${readable} bisa dibaca di sini`;
     const order = chapterFeed.map((_, i) => i);
     if (chapterDesc) order.reverse();
 
     chapterList.innerHTML = order.map(idx => {
         const a = chapterFeed[idx].attributes;
         const isExternal = !!a.externalUrl;
-        const label = isExternal ? 'Web Resmi' : a.translatedLanguage.toUpperCase();
+        const label = isExternal ? 'Hanya di situs resmi' : a.translatedLanguage.toUpperCase();
         const color = isExternal ? '#e50914' : '#888';
         const numText = (a.chapter !== null && a.chapter !== undefined && a.chapter !== '') ? `Ch. ${esc(a.chapter)}` : 'Oneshot';
         return `
-            <button class="chapter-btn" onclick="window._readChapter(${idx})">
+            <button class="chapter-btn${isExternal ? ' disabled' : ''}" ${isExternal ? 'disabled' : `onclick="window._readChapter(${idx})"`}>
                 <span>${numText}${a.title ? ' - ' + esc(a.title) : ''}</span>
                 <span style="font-size:0.7rem; color:${color}; flex-shrink:0; margin-left:10px;">${esc(label)}</span>
             </button>`;
@@ -329,13 +330,21 @@ function chapterLabel(ch) {
     return a.title ? `${n} - ${a.title}` : n;
 }
 
+const isReadable = (i) => chapterFeed[i] && !chapterFeed[i].attributes.externalUrl;
+function adjacentReadable(from, dir) {
+    for (let i = from + dir; i >= 0 && i < chapterFeed.length; i += dir) if (isReadable(i)) return i;
+    return -1;
+}
+
 function updateReaderNav() {
-    const hasPrev = currentChapterIndex > 0;
-    const hasNext = currentChapterIndex < chapterFeed.length - 1;
+    const prevIdx = adjacentReadable(currentChapterIndex, -1);
+    const nextIdx = adjacentReadable(currentChapterIndex, 1);
+    const hasPrev = prevIdx !== -1;
+    const hasNext = nextIdx !== -1;
     prevChapterBtn.style.display = hasPrev ? 'inline-flex' : 'none';
     nextChapterBtn.style.display = hasNext ? 'inline-flex' : 'none';
-    prevChapterBtn.onclick = () => window._readChapter(currentChapterIndex - 1);
-    nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
+    prevChapterBtn.onclick = () => window._readChapter(prevIdx);
+    nextChapterBtn.onclick = () => window._readChapter(nextIdx);
     readerNext.style.display = (hasPrev || hasNext) ? 'flex' : 'none';
 }
 
@@ -348,11 +357,8 @@ window._readChapter = async (index) => {
     const ch = chapterFeed[index];
     const token = ++readToken;
 
-    // chapter eksternal: buka di tab baru (hampir semua situs resmi memblokir iframe)
-    if (ch.attributes.externalUrl) {
-        window.open(ch.attributes.externalUrl, '_blank', 'noopener');
-        return;
-    }
+    // chapter eksternal tidak punya gambar di MangaDex -> tidak bisa dibaca di sini, tidak ada redirect
+    if (ch.attributes.externalUrl) return;
 
     readerTitle.textContent = `${currentManga ? pickTitle(currentManga) : ''} — ${chapterLabel(ch)}`;
     readerImages.innerHTML = '<p style="color:white; text-align:center; margin-top:50px;">Memuat halaman...</p>';
@@ -461,8 +467,8 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     if (!reader.classList.contains('active')) return;
-    if (e.key === 'ArrowRight' && currentChapterIndex < chapterFeed.length - 1) window._readChapter(currentChapterIndex + 1);
-    if (e.key === 'ArrowLeft' && currentChapterIndex > 0) window._readChapter(currentChapterIndex - 1);
+    if (e.key === 'ArrowRight') { const n = adjacentReadable(currentChapterIndex, 1); if (n !== -1) window._readChapter(n); }
+    if (e.key === 'ArrowLeft') { const n = adjacentReadable(currentChapterIndex, -1); if (n !== -1) window._readChapter(n); }
 });
 
 loadPopular(true);
