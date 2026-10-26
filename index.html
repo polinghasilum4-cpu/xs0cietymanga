@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>xs0ciety505 — Baca Manga dan Mahnwa</title>
+    <title>xs0ciety505 — Baca Manga, Manhwa &amp; Manhua</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90' fill='%23e50914' font-weight='900' font-family='Arial'%3EX%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -18,6 +18,7 @@
         <div class="nav-actions">
             <!-- DROPDOWN BAHASA -->
             <select id="langSelect" class="lang-select">
+                <option value="all">🌐 ID+EN</option>
                 <option value="id">🇮🇩 ID</option>
                 <option value="en">🇬🇧 EN</option>
             </select>
@@ -28,7 +29,7 @@
             </button>
 
             <div class="search-box-top">
-                <input type="text" id="searchInput" placeholder="Cari manga...">
+                <input type="text" id="searchInput" placeholder="Cari manga, manhwa, manhua...">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             </div>
         </div>
@@ -53,12 +54,22 @@
             <div class="section-header">
                 <h3 class="section-title">Populer</h3>
             </div>
+            <div class="tabs" id="typeTabs">
+                <button class="tab active" data-type="all">Semua</button>
+                <button class="tab" data-type="manga">Manga</button>
+                <button class="tab" data-type="manhwa">Manhwa</button>
+                <button class="tab" data-type="manhua">Manhua</button>
+            </div>
             <div class="grid" id="mangaGrid"></div>
+            <div class="load-more-wrap">
+                <button class="btn btn-red" id="loadMoreBtn" style="display:none;">Muat lebih banyak</button>
+            </div>
         </section>
     </main>
 
     <section id="searchView" class="container" style="display:none; padding-top: 100px;">
         <h3 class="section-title">Hasil Pencarian</h3>
+        <input type="text" id="searchInputMobile" class="search-mobile" placeholder="Cari manga, manhwa, manhua...">
         <div class="grid" id="searchGrid" style="margin-top:20px;"></div>
     </section>
 
@@ -112,6 +123,10 @@
                 <div class="modal-info">
                     <h3 id="modalTitle"></h3>
                     <p id="modalSynopsis"></p>
+                    <div class="chapter-toolbar">
+                        <span id="chapterCount" class="muted-msg" style="padding:0;"></span>
+                        <button id="sortBtn" class="sort-btn">Terlama ↑</button>
+                    </div>
                     <div id="chapterList" class="chapter-list"></div>
                 </div>
             </div>
@@ -120,24 +135,11 @@
 
     <div class="reader-overlay" id="reader">
         <button class="reader-close" id="closeReader">&times;</button>
+        <div class="reader-title" id="readerTitle"></div>
         <div class="reader-content" id="readerImages"></div>
         <div class="reader-next" id="readerNext" style="display:none;">
-            <button class="btn btn-red" id="nextChapterBtn">
-                Chapter Selanjutnya <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-            </button>
-        </div>
-    </div>
-
-    <!-- MODAL EXTERNAL CHAPTER -->
-    <div class="modal-overlay" id="extModal" style="z-index: 400;">
-        <div class="modal-content" style="max-width: 900px; height: 90vh;">
-            <button class="modal-close" id="closeExtModal">&times;</button>
-            <div style="padding: 40px 10px 10px 10px; height: 100%; display: flex; flex-direction: column;">
-                <div id="extWarning" style="background: #e50914; color: white; padding: 10px; font-size: 0.8rem; border-radius: 4px; margin-bottom: 10px; display:none;">
-                    Peringatan: Web asal memblokir tampilan di dalam web kita. <a id="extLink" href="#" target="_blank" style="color: white; font-weight: bold; text-decoration: underline;">Buka di Tab Baru</a>
-                </div>
-                <iframe id="extFrame" src="" style="width: 100%; flex: 1; border: none; background: white; border-radius: 8px;"></iframe>
-            </div>
+            <button class="btn btn-dark" id="prevChapterBtn">← Sebelumnya</button>
+            <button class="btn btn-red" id="nextChapterBtn">Selanjutnya →</button>
         </div>
     </div>
 

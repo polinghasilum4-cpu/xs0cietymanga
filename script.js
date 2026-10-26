@@ -1,273 +1,468 @@
 const PROXY = '/api/proxy';
 const MDX = 'https://api.mangadex.org';
+const PAGE_SIZE = 24;
+const RATINGS = '&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica';
+
+// Jenis karya -> originalLanguage MangaDex
+const TYPE_LANGS = { all: [], manga: ['ja'], manhwa: ['ko'], manhua: ['zh', 'zh-hk'] };
+const TYPE_LABEL = { ja: 'Manga', ko: 'Manhwa', zh: 'Manhua', 'zh-hk': 'Manhua' };
+const STATUS_ID = { ongoing: 'Berjalan', completed: 'Tamat', hiatus: 'Hiatus', cancelled: 'Dibatalkan' };
 
 let currentManga = null;
-let chapterFeed = []; 
+let chapterFeed = [];          // urut naik (kecil -> besar)
 let currentChapterIndex = -1;
-let currentLang = localStorage.getItem('lang') || 'id'; // DEFAULT ID
+let chapterDesc = false;       // urutan tampilan daftar chapter
+let currentType = 'all';
+let popularOffset = 0;
+let popularTotal = 0;
+let currentLang = localStorage.getItem('lang') || 'all'; // id | en | all (ID dulu, EN melengkapi)
+if (!['id', 'en', 'all'].includes(currentLang)) currentLang = 'all';
 
-const grid = document.getElementById('mangaGrid');
-const searchGrid = document.getElementById('searchGrid');
-const searchInput = document.getElementById('searchInput');
-const langSelect = document.getElementById('langSelect');
-const heroBg = document.getElementById('heroBg');
-const heroTitle = document.getElementById('heroTitle');
-const heroSynopsis = document.getElementById('heroSynopsis');
-const heroReadBtn = document.getElementById('heroReadBtn');
-const modal = document.getElementById('modal');
-const closeModal = document.getElementById('closeModal');
-const modalImg = document.getElementById('modalImg');
-const modalTitle = document.getElementById('modalTitle');
-const modalSynopsis = document.getElementById('modalSynopsis');
-const chapterList = document.getElementById('chapterList');
-const reader = document.getElementById('reader');
-const closeReader = document.getElementById('closeReader');
-const readerImages = document.getElementById('readerImages');
-const readerNext = document.getElementById('readerNext');
-const nextChapterBtn = document.getElementById('nextChapterBtn');
+// token untuk membatalkan respon basi (user klik cepat / ganti bahasa)
+let popularToken = 0, chapterToken = 0, readToken = 0, searchToken = 0;
 
-// External Modal
-const extModal = document.getElementById('extModal');
-const closeExtModal = document.getElementById('closeExtModal');
-const extFrame = document.getElementById('extFrame');
-const extWarning = document.getElementById('extWarning');
-const extLink = document.getElementById('extLink');
+const $ = (id) => document.getElementById(id);
+const grid = $('mangaGrid');
+const searchGrid = $('searchGrid');
+const searchInputs = [$('searchInput'), $('searchInputMobile')].filter(Boolean);
+const langSelect = $('langSelect');
+const heroBg = $('heroBg');
+const heroTitle = $('heroTitle');
+const heroSynopsis = $('heroSynopsis');
+const heroReadBtn = $('heroReadBtn');
+const modal = $('modal');
+const closeModal = $('closeModal');
+const modalImg = $('modalImg');
+const modalTitle = $('modalTitle');
+const modalSynopsis = $('modalSynopsis');
+const chapterList = $('chapterList');
+const chapterCount = $('chapterCount');
+const sortBtn = $('sortBtn');
+const reader = $('reader');
+const closeReader = $('closeReader');
+const readerTitle = $('readerTitle');
+const readerImages = $('readerImages');
+const readerNext = $('readerNext');
+const nextChapterBtn = $('nextChapterBtn');
+const prevChapterBtn = $('prevChapterBtn');
+const loadMoreBtn = $('loadMoreBtn');
+const typeTabs = $('typeTabs');
 
-// BGM
-const bgm = document.getElementById('bgm');
-const bgmToggle = document.getElementById('bgmToggle');
-const iconPlay = document.getElementById('icon-play');
-const iconPause = document.getElementById('icon-pause');
-let isPlaying = false;
+const bgm = $('bgm');
+const bgmToggle = $('bgmToggle');
+const iconPlay = $('icon-play');
+const iconPause = $('icon-pause');
 
-bgmToggle.onclick = () => {
-    if (isPlaying) {
-        bgm.pause();
-        iconPlay.style.display = 'block';
-        iconPause.style.display = 'none';
-    } else {
-        bgm.play();
-        iconPlay.style.display = 'none';
-        iconPause.style.display = 'block';
+const fallbackImg = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="256" height="384"%3E%3Crect width="100%25" height="100%25" fill="%23141414"/%3E%3Ctext x="50%25" y="50%25" fill="%23e50914" font-family="sans-serif" font-weight="bold" font-size="24" text-anchor="middle" dy=".3em"%3EXSOCIETY%3C/text%3E%3C/svg%3E';
+
+/* ---------- util ---------- */
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const proxied = (url) => `${PROXY}?url=${encodeURIComponent(url)}`;
+const getProxiedImage = (url) => url ? proxied(url) : fallbackImg;
+
+// fetch JSON via proxy, dengan retry untuk 429 / 5xx
+async function proxyFetch(endpoint, tries = 3) {
+    let lastErr;
+    for (let i = 0; i < tries; i++) {
+        try {
+            const r = await fetch(proxied(MDX + endpoint));
+            if (r.ok) return await r.json();
+            lastErr = new Error('HTTP ' + r.status);
+            if (r.status !== 429 && r.status < 500) break;   // 4xx lain: jangan diulang
+        } catch (e) { lastErr = e; }
+        await sleep(600 * (i + 1));
     }
-    isPlaying = !isPlaying;
+    throw lastErr || new Error('Request gagal');
+}
+
+const pickTitle = (m) => {
+    const t = m.attributes.title || {};
+    return t.en || t.id || Object.values(t)[0] || 'Untitled';
+};
+const pickDesc = (m) => {
+    const d = m.attributes.description || {};
+    return d.id || d.en || Object.values(d)[0] || 'Sinopsis tidak tersedia.';
+};
+const langList = () => currentLang === 'all' ? ['id', 'en'] : [currentLang];
+const langQuery = (key) => langList().map(l => `&${key}[]=${l}`).join('');
+
+/* ---------- BGM ---------- */
+bgmToggle.onclick = async () => {
+    try {
+        if (bgm.paused) { await bgm.play(); iconPlay.style.display = 'none'; iconPause.style.display = 'block'; }
+        else { bgm.pause(); iconPlay.style.display = 'block'; iconPause.style.display = 'none'; }
+    } catch (e) { /* autoplay diblokir / sumber audio gagal */ }
 };
 
-// Set initial lang dropdown
+/* ---------- bahasa ---------- */
 langSelect.value = currentLang;
 langSelect.addEventListener('change', (e) => {
     currentLang = e.target.value;
     localStorage.setItem('lang', currentLang);
-    if(currentManga) loadChapters(currentManga.id);
+    loadPopular(true);                                  // daftar ikut bahasa terpilih
+    if (currentManga && modal.classList.contains('active')) loadChapters(currentManga.id);
 });
 
-const fallbackImg = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="256" height="384"%3E%3Crect width="100%25" height="100%25" fill="%23141414"/%3E%3Ctext x="50%25" y="50%25" fill="%23e50914" font-family="sans-serif" font-weight="bold" font-size="24" text-anchor="middle" dy=".3em"%3EXSOCIETY%3C/text%3E%3C/svg%3E';
-const proxyFetch = (endpoint) => fetch(`${PROXY}?url=${encodeURIComponent(MDX + endpoint)}`).then(r => r.json());
-const getProxiedImage = (url) => url ? `${PROXY}?url=${encodeURIComponent(url)}` : fallbackImg;
+/* ---------- tab Manga / Manhwa / Manhua ---------- */
+typeTabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-type]');
+    if (!btn || btn.dataset.type === currentType) return;
+    currentType = btn.dataset.type;
+    typeTabs.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b === btn));
+    loadPopular(true);
+});
 
-async function loadPopular() {
-    grid.innerHTML = '<p style="color:#888; padding:20px;">Memuat...</p>';
-    const json = await proxyFetch('/manga?limit=12&includes[]=cover_art&order[followedCount]=desc');
-    const list = json.data || [];
-    
-    if (list.length > 0) {
-        const top = list[0];
-        heroBg.style.backgroundImage = `url('${getProxiedImage(top.coverUrl)}')`;
-        heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
-        heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
-        heroReadBtn.onclick = () => window._openManga(top.id);
-        renderGrid(list, grid);
+/* ---------- daftar populer ---------- */
+async function loadPopular(reset) {
+    const token = ++popularToken;
+    if (reset) {
+        popularOffset = 0;
+        grid.innerHTML = '<p class="muted-msg">Memuat...</p>';
+        loadMoreBtn.style.display = 'none';
+    }
+    loadMoreBtn.disabled = true;
+
+    const type = TYPE_LANGS[currentType].map(l => `&originalLanguage[]=${l}`).join('');
+    const q = `/manga?limit=${PAGE_SIZE}&offset=${popularOffset}&includes[]=cover_art&order[followedCount]=desc`
+        + RATINGS + langQuery('availableTranslatedLanguage') + type;
+
+    try {
+        const json = await proxyFetch(q);
+        if (token !== popularToken) return;
+        const list = json.data || [];
+        popularTotal = json.total || 0;
+
+        if (reset) {
+            if (!list.length) { grid.innerHTML = '<p class="muted-msg">Belum ada judul untuk filter ini.</p>'; return; }
+            setHero(list[0]);
+            grid.innerHTML = '';
+        }
+        grid.insertAdjacentHTML('beforeend', cardsHtml(list));
+        popularOffset += list.length;
+        loadMoreBtn.style.display = (list.length && popularOffset < popularTotal && popularOffset < 9900) ? 'inline-flex' : 'none';
+    } catch (e) {
+        if (token !== popularToken) return;
+        if (reset) grid.innerHTML = '<p class="muted-msg">Gagal memuat daftar. <a href="#" onclick="loadPopular(true);return false;">Coba lagi</a></p>';
+    } finally {
+        if (token === popularToken) loadMoreBtn.disabled = false;
     }
 }
+window.loadPopular = loadPopular;
+loadMoreBtn.addEventListener('click', () => loadPopular(false));
 
-function renderGrid(list, container) {
-    container.innerHTML = list.map(m => {
-        const title = m.attributes.title.en || Object.values(m.attributes.title)[0] || 'Untitled';
+function setHero(top) {
+    heroBg.style.backgroundImage = top.coverUrl ? `url('${getProxiedImage(top.coverUrl)}')` : 'none';
+    heroTitle.textContent = pickTitle(top);
+    heroSynopsis.textContent = pickDesc(top);
+    heroReadBtn.onclick = () => window._openManga(top.id);
+}
+
+function cardsHtml(list) {
+    return list.map(m => {
+        const title = esc(pickTitle(m));
+        const kind = TYPE_LABEL[m.attributes.originalLanguage] || '';
+        const status = STATUS_ID[m.attributes.status] || m.attributes.status || '';
         return `
-            <div class="card" onclick="window._openManga('${m.id}')">
+            <div class="card" onclick="window._openManga('${esc(m.id)}')">
                 <div class="img-wrapper">
+                    ${kind ? `<span class="type-badge">${kind}</span>` : ''}
                     <img src="${getProxiedImage(m.coverUrl)}" alt="${title}" loading="lazy" onerror="this.onerror=null; this.src='${fallbackImg}'">
                 </div>
                 <div class="card-info">
                     <h4>${title}</h4>
-                    <span>${m.attributes.status || 'Unknown'}</span>
+                    <span>${esc(status)}</span>
                 </div>
-            </div>
-        `;
+            </div>`;
     }).join('');
 }
 
+function renderGrid(list, container) { container.innerHTML = cardsHtml(list); }
+
+/* ---------- detail judul ---------- */
 window._openManga = async (id) => {
-    const json = await proxyFetch(`/manga/${id}?includes[]=cover_art`);
-    const manga = json.data;
-    if (!manga) return;
-    
-    currentManga = manga;
-    modalImg.src = getProxiedImage(manga.coverUrl);
-    modalImg.onerror = function() { this.onerror=null; this.src = fallbackImg; };
-    modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
-    modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
-    
-    modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-    
-    loadChapters(id);
+    try {
+        const json = await proxyFetch(`/manga/${id}?includes[]=cover_art`);
+        const manga = json.data;
+        if (!manga) return;
+
+        currentManga = manga;
+        modalImg.onerror = function () { this.onerror = null; this.src = fallbackImg; };
+        modalImg.src = getProxiedImage(manga.coverUrl);
+        modalTitle.textContent = pickTitle(manga);
+        modalSynopsis.textContent = pickDesc(manga);
+
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        loadChapters(id);
+    } catch (e) {
+        alert('Gagal membuka judul. Coba lagi.');
+    }
 };
 
-// PAGINATION 500+ CHAPTERS
-async function fetchAllChapters(mangaId, lang) {
-    let offset = 0;
-    let allData = [];
-    let hasMore = true;
-    
-    while (hasMore) {
-        const json = await proxyFetch(`/manga/${mangaId}/feed?limit=500&offset=${offset}&translatedLanguage[]=${lang}`);
-        if (json.data && json.data.length > 0) {
-            allData = allData.concat(json.data);
-            offset += 500;
-            if (json.data.length < 500) hasMore = false;
-        } else {
-            hasMore = false;
-        }
+/* ---------- chapter lengkap ---------- */
+// ambil SEMUA halaman feed (limit API 500/halaman, total dibaca dari respon)
+async function fetchAllChapters(mangaId) {
+    const base = `/manga/${mangaId}/feed?limit=500&order[volume]=asc&order[chapter]=asc&includeFutureUpdates=0`
+        + RATINGS + langQuery('translatedLanguage');
+    let offset = 0, all = [], total = Infinity;
+    while (offset < total && offset < 9500) {              // batas API: offset+limit <= 10000
+        const json = await proxyFetch(`${base}&offset=${offset}`);
+        const data = json.data || [];
+        total = json.total ?? (data.length < 500 ? offset + data.length : Infinity);
+        if (!data.length) break;
+        all = all.concat(data);
+        offset += data.length;
     }
-    return allData;
+    return all;
+}
+
+// pilih versi terbaik kalau satu chapter diunggah beberapa grup / bahasa
+function chapterScore(ch) {
+    const a = ch.attributes;
+    const readable = !a.externalUrl && (a.pages || 0) > 0;
+    const langPref = currentLang === 'all' ? (a.translatedLanguage === 'id' ? 1 : 0) : 0;
+    return [readable ? 1 : 0, langPref, a.pages || 0, Date.parse(a.publishAt) || 0];
+}
+function better(a, b) {
+    const sa = chapterScore(a), sb = chapterScore(b);
+    for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return sa[i] > sb[i];
+    return false;
+}
+
+function buildChapterFeed(chaps) {
+    const byNum = new Map();       // nomor chapter -> { volume -> chapter terbaik }
+    const extras = [];             // chapter tanpa nomor (oneshot / special)
+
+    chaps.forEach(ch => {
+        const num = ch.attributes.chapter;
+        if (num === null || num === undefined || num === '') { extras.push(ch); return; }
+        const vol = ch.attributes.volume || '';
+        if (!byNum.has(num)) byNum.set(num, new Map());
+        const vols = byNum.get(num);
+        if (!vols.has(vol) || better(ch, vols.get(vol))) vols.set(vol, ch);
+    });
+
+    const result = [];
+    byNum.forEach((vols) => {
+        const entries = [...vols.entries()];
+        const named = entries.filter(([v]) => v !== '');
+        if (named.length <= 1) {
+            // satu volume (atau tidak ada info volume): ambil satu terbaik saja
+            let best = null;
+            entries.forEach(([, c]) => { if (!best || better(c, best)) best = c; });
+            result.push(best);
+        } else {
+            // nomor sama di volume berbeda (season reset): pertahankan keduanya
+            named.forEach(([, c]) => result.push(c));
+        }
+    });
+
+    const num = (c) => parseFloat(c.attributes.chapter);
+    result.sort((a, b) => (num(a) - num(b)) || ((parseFloat(a.attributes.volume) || 0) - (parseFloat(b.attributes.volume) || 0)));
+
+    // oneshot dedup per id, taruh di akhir
+    const seenTitle = new Set();
+    extras.sort((a, b) => (Date.parse(a.attributes.publishAt) || 0) - (Date.parse(b.attributes.publishAt) || 0))
+        .forEach(c => {
+            const k = (c.attributes.title || '') + '|' + c.attributes.translatedLanguage;
+            if (seenTitle.has(k)) return;
+            seenTitle.add(k);
+            result.push(c);
+        });
+    return result;
 }
 
 async function loadChapters(mangaId) {
-    chapterList.innerHTML = `<p style="color:#888; padding:10px;">Memuat chapter (${currentLang.toUpperCase()})...</p>`;
-    
-    // FETCH BERDASARKAN BAHASA YANG DIPILIH AJA
-    const chaps = await fetchAllChapters(mangaId, currentLang);
-    
-    let uniqueChapters = {};
-    chaps.forEach(ch => {
-        let num = ch.attributes.chapter;
-        if (!num) return;
-        if (!uniqueChapters[num]) {
-            uniqueChapters[num] = ch;
-        }
-    });
+    const token = ++chapterToken;
+    chapterCount.textContent = '';
+    chapterList.innerHTML = `<p class="muted-msg">Memuat semua chapter...</p>`;
 
-    chapterFeed = Object.values(uniqueChapters).sort((a, b) => {
-        let numA = parseFloat(a.attributes.chapter);
-        let numB = parseFloat(b.attributes.chapter);
-        if (isNaN(numA)) numA = 999999;
-        if (isNaN(numB)) numB = 999999;
-        return numA - numB;
-    });
-
-    if (chapterFeed.length > 0) {
-        chapterList.innerHTML = chapterFeed.map((ch, idx) => {
-            const isExternal = !!ch.attributes.externalUrl;
-            const label = isExternal ? 'Web Resmi' : ch.attributes.translatedLanguage.toUpperCase();
-            const color = isExternal ? '#e50914' : '#888';
-
-            return `
-                <button class="chapter-btn" onclick="window._readChapter(${idx})">
-                    Ch. ${ch.attributes.chapter} ${ch.attributes.title ? '- ' + ch.attributes.title : ''} 
-                    <span style="font-size:0.7rem; color:${color};">(${label})</span>
-                </button>
-            `;
-        }).join('');
-    } else {
-        chapterList.innerHTML = `<p style="color:#888; padding:10px;">Chapter bahasa ${currentLang.toUpperCase()} belum tersedia.</p>`;
+    try {
+        const chaps = await fetchAllChapters(mangaId);
+        if (token !== chapterToken) return;
+        chapterFeed = buildChapterFeed(chaps);
+        renderChapterList();
+    } catch (e) {
+        if (token !== chapterToken) return;
+        chapterFeed = [];
+        chapterList.innerHTML = `<p class="muted-msg">Gagal memuat chapter. <a href="#" onclick="loadChapters('${esc(mangaId)}');return false;">Coba lagi</a></p>`;
     }
 }
+window.loadChapters = loadChapters;
+
+function renderChapterList() {
+    if (!chapterFeed.length) {
+        const where = currentLang === 'all' ? 'ID/EN' : currentLang.toUpperCase();
+        chapterCount.textContent = '';
+        chapterList.innerHTML = `<p class="muted-msg">Chapter bahasa ${where} belum tersedia.</p>`;
+        return;
+    }
+    chapterCount.textContent = `${chapterFeed.length} chapter`;
+    const order = chapterFeed.map((_, i) => i);
+    if (chapterDesc) order.reverse();
+
+    chapterList.innerHTML = order.map(idx => {
+        const a = chapterFeed[idx].attributes;
+        const isExternal = !!a.externalUrl;
+        const label = isExternal ? 'Web Resmi' : a.translatedLanguage.toUpperCase();
+        const color = isExternal ? '#e50914' : '#888';
+        const numText = (a.chapter !== null && a.chapter !== undefined && a.chapter !== '') ? `Ch. ${esc(a.chapter)}` : 'Oneshot';
+        return `
+            <button class="chapter-btn" onclick="window._readChapter(${idx})">
+                <span>${numText}${a.title ? ' - ' + esc(a.title) : ''}</span>
+                <span style="font-size:0.7rem; color:${color}; flex-shrink:0; margin-left:10px;">${esc(label)}</span>
+            </button>`;
+    }).join('');
+}
+
+sortBtn.addEventListener('click', () => {
+    chapterDesc = !chapterDesc;
+    sortBtn.textContent = chapterDesc ? 'Terbaru ↓' : 'Terlama ↑';
+    renderChapterList();
+});
+
+/* ---------- reader ---------- */
+function chapterLabel(ch) {
+    const a = ch.attributes;
+    const n = (a.chapter !== null && a.chapter !== undefined && a.chapter !== '') ? `Ch. ${a.chapter}` : 'Oneshot';
+    return a.title ? `${n} - ${a.title}` : n;
+}
+
+function updateReaderNav() {
+    const hasPrev = currentChapterIndex > 0;
+    const hasNext = currentChapterIndex < chapterFeed.length - 1;
+    prevChapterBtn.style.display = hasPrev ? 'inline-flex' : 'none';
+    nextChapterBtn.style.display = hasNext ? 'inline-flex' : 'none';
+    prevChapterBtn.onclick = () => window._readChapter(currentChapterIndex - 1);
+    nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
+    readerNext.style.display = (hasPrev || hasNext) ? 'flex' : 'none';
+}
+
+const readerMsg = (txt, retry) =>
+    `<p style="color:#e50914; text-align:center; margin-top:50px; padding:20px; font-weight:bold;">${txt}${retry ? ` <a href="#" style="color:#fff" onclick="window._readChapter(${currentChapterIndex});return false;">Coba lagi</a>` : ''}</p>`;
 
 window._readChapter = async (index) => {
     if (index < 0 || index >= chapterFeed.length) return;
     currentChapterIndex = index;
     const ch = chapterFeed[index];
-    
-    // EXTERNAL CHAPTER (BUKA MODAL IFRAME)
-    if (ch.attributes.externalUrl) {
-        extWarning.style.display = 'none';
-        extLink.href = ch.attributes.externalUrl;
-        extFrame.src = ch.attributes.externalUrl;
-        
-        setTimeout(() => {
-            try {
-                if (!extFrame.contentWindow || !extFrame.contentWindow.location.href) throw new Error("blocked");
-            } catch (e) {
-                extWarning.style.display = 'block';
-            }
-        }, 2000);
+    const token = ++readToken;
 
-        extModal.classList.add('active');
-        document.body.style.overflow = 'hidden';
+    // chapter eksternal: buka di tab baru (hampir semua situs resmi memblokir iframe)
+    if (ch.attributes.externalUrl) {
+        window.open(ch.attributes.externalUrl, '_blank', 'noopener');
         return;
     }
-    
-    // INTERNAL CHAPTER
+
+    readerTitle.textContent = `${currentManga ? pickTitle(currentManga) : ''} — ${chapterLabel(ch)}`;
     readerImages.innerHTML = '<p style="color:white; text-align:center; margin-top:50px;">Memuat halaman...</p>';
     readerNext.style.display = 'none';
     reader.classList.add('active');
     modal.classList.remove('active');
     reader.scrollTop = 0;
-    
+    document.body.style.overflow = 'hidden';
+
     try {
         const json = await proxyFetch(`/at-home/server/${ch.id}`);
+        if (token !== readToken) return;
         if (!json || !json.baseUrl || !json.chapter || !json.chapter.hash) {
-            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding:20px; font-weight:bold;">Gambar chapter ini kosong. Silakan pilih chapter lain.</p>';
+            readerImages.innerHTML = readerMsg('Gambar chapter ini kosong. Silakan pilih chapter lain.');
+            updateReaderNav();
             return;
         }
 
-        const baseUrl = json.baseUrl;
-        const hash = json.chapter.hash;
-        const pages = json.chapter.dataSaver || json.chapter.data;
-        const qualityPath = json.chapter.dataSaver ? 'data-saver' : 'data';
-        
-        if (!pages || pages.length === 0) {
-            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding:20px;">Gambar tidak ditemukan.</p>';
+        const { baseUrl, chapter } = json;
+        const useSaver = Array.isArray(chapter.dataSaver) && chapter.dataSaver.length > 0;
+        const pages = useSaver ? chapter.dataSaver : chapter.data;
+        const quality = useSaver ? 'data-saver' : 'data';
+        if (!pages || !pages.length) {
+            readerImages.innerHTML = readerMsg('Gambar tidak ditemukan.');
+            updateReaderNav();
             return;
         }
 
-        readerImages.innerHTML = pages.map(page => {
-            const rawUrl = `${baseUrl}/${qualityPath}/${hash}/${page}`;
-            const proxiedUrl = `${PROXY}?url=${encodeURIComponent(rawUrl)}`;
-            return `<img src="${proxiedUrl}" alt="Page" loading="lazy">`;
+        // muat langsung dari node MangaDex@Home (cepat, hemat kuota Vercel);
+        // kalau gagal, otomatis dicoba lewat proxy
+        readerImages.innerHTML = pages.map(p => {
+            const raw = `${baseUrl}/${quality}/${chapter.hash}/${p}`;
+            return `<img src="${esc(raw)}" data-raw="${esc(raw)}" alt="Halaman" loading="lazy">`;
         }).join('');
-        
-        if (currentChapterIndex < chapterFeed.length - 1) {
-            readerNext.style.display = 'flex';
-            nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
-        }
+        updateReaderNav();
     } catch (err) {
-        readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding:20px; font-weight:bold;">Gagal memuat gambar.</p>';
+        if (token !== readToken) return;
+        readerImages.innerHTML = readerMsg('Gagal memuat gambar.', true);
     }
 };
 
-window.addEventListener('scroll', () => {
-    if (!reader.classList.contains('active')) return;
-    if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 100) {
-        if (currentChapterIndex < chapterFeed.length - 1) readerNext.style.display = 'flex';
+// fallback gambar halaman: direct -> proxy -> placeholder
+readerImages.addEventListener('error', (e) => {
+    const img = e.target;
+    if (img.tagName !== 'IMG') return;
+    if (!img.dataset.tried) {
+        img.dataset.tried = '1';
+        img.src = proxied(img.dataset.raw);
+    } else if (img.dataset.tried === '1') {
+        img.dataset.tried = '2';
+        img.src = fallbackImg;
     }
-});
+}, true);
 
+/* ---------- pencarian ---------- */
 let searchTimeout;
-searchInput.addEventListener('input', (e) => {
-    clearTimeout(searchTimeout);
+function onSearchInput(e) {
     const q = e.target.value.trim();
-    if (q.length < 3) return;
-    searchTimeout = setTimeout(async () => {
-        searchGrid.innerHTML = '<p style="color:#888;">Mencari...</p>';
-        const json = await proxyFetch(`/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`);
-        if (json.data) renderGrid(json.data, searchGrid);
-    }, 600);
-});
+    searchInputs.forEach(i => { if (i !== e.target) i.value = e.target.value; });   // sinkron desktop & mobile
+    clearTimeout(searchTimeout);
+    window.switchView('search', true);
+    if (q.length < 2) { searchGrid.innerHTML = '<p class="muted-msg">Ketik minimal 2 huruf.</p>'; return; }
 
-window.switchView = (view) => {
-    document.getElementById('dashboardView').style.display = view === 'dashboard' ? 'block' : 'none';
-    document.getElementById('searchView').style.display = view === 'search' ? 'block' : 'none';
-    document.getElementById('devView').style.display = view === 'dev' ? 'block' : 'none';
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-    if (view === 'dashboard') document.querySelectorAll('.nav-btn')[0].classList.add('active');
-    if (view === 'search') document.querySelectorAll('.nav-btn')[1].classList.add('active');
-    if (view === 'dev') document.querySelectorAll('.nav-btn')[2].classList.add('active');
-    window.scrollTo(0, 0);
+    searchTimeout = setTimeout(async () => {
+        const token = ++searchToken;
+        searchGrid.innerHTML = '<p class="muted-msg">Mencari...</p>';
+        try {
+            const json = await proxyFetch(`/manga?title=${encodeURIComponent(q)}&limit=30&includes[]=cover_art&order[relevance]=desc` + RATINGS);
+            if (token !== searchToken) return;
+            if (json.data && json.data.length) renderGrid(json.data, searchGrid);
+            else searchGrid.innerHTML = '<p class="muted-msg">Tidak ada hasil.</p>';
+        } catch (err) {
+            if (token === searchToken) searchGrid.innerHTML = '<p class="muted-msg">Gagal mencari. Coba lagi.</p>';
+        }
+    }, 500);
+}
+searchInputs.forEach(i => i.addEventListener('input', onSearchInput));
+
+/* ---------- navigasi ---------- */
+window.switchView = (view, keepScroll) => {
+    $('dashboardView').style.display = view === 'dashboard' ? 'block' : 'none';
+    $('searchView').style.display = view === 'search' ? 'block' : 'none';
+    $('devView').style.display = view === 'dev' ? 'block' : 'none';
+    const btns = document.querySelectorAll('.nav-btn');
+    btns.forEach(b => b.classList.remove('active'));
+    const i = { dashboard: 0, search: 1, dev: 2 }[view];
+    if (btns[i]) btns[i].classList.add('active');
+    if (!keepScroll) window.scrollTo(0, 0);
+    if (view === 'search' && !keepScroll && searchInputs[1]) searchInputs[1].focus();
 };
 
 closeModal.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
-closeReader.onclick = () => { reader.classList.remove('active'); document.body.style.overflow = ''; };
-closeExtModal.onclick = () => { extModal.classList.remove('active'); extFrame.src = ''; document.body.style.overflow = ''; };
-loadPopular();
+closeReader.onclick = () => {
+    reader.classList.remove('active');
+    readerImages.innerHTML = '';
+    // balik ke daftar chapter supaya bisa lanjut pilih chapter lain
+    if (currentManga) { modal.classList.add('active'); document.body.style.overflow = 'hidden'; }
+    else document.body.style.overflow = '';
+};
+modal.addEventListener('click', (e) => { if (e.target === modal) closeModal.onclick(); });
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        if (reader.classList.contains('active')) closeReader.onclick();
+        else if (modal.classList.contains('active')) closeModal.onclick();
+        return;
+    }
+    if (!reader.classList.contains('active')) return;
+    if (e.key === 'ArrowRight' && currentChapterIndex < chapterFeed.length - 1) window._readChapter(currentChapterIndex + 1);
+    if (e.key === 'ArrowLeft' && currentChapterIndex > 0) window._readChapter(currentChapterIndex - 1);
+});
+
+loadPopular(true);
