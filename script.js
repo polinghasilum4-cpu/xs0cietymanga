@@ -25,8 +25,8 @@ const readerNext = document.getElementById('readerNext');
 const nextChapterBtn = document.getElementById('nextChapterBtn');
 
 const fallbackImg = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="256" height="384"%3E%3Crect width="100%25" height="100%25" fill="%23141414"/%3E%3Ctext x="50%25" y="50%25" fill="%23e50914" font-family="sans-serif" font-weight="bold" font-size="24" text-anchor="middle" dy=".3em"%3EXSOCIETY%3C/text%3E%3C/svg%3E';
-const getCover = (m) => m.coverUrl || fallbackImg;
 const proxyFetch = (endpoint) => fetch(`${PROXY}?url=${encodeURIComponent(MDX + endpoint)}`).then(r => r.json());
+const getProxiedImage = (url) => url ? `${PROXY}?url=${encodeURIComponent(url)}` : fallbackImg;
 
 async function loadPopular() {
     grid.innerHTML = '<p style="color:#888; padding:20px;">Memuat...</p>';
@@ -35,13 +35,11 @@ async function loadPopular() {
     
     if (list.length > 0) {
         const top = list[0];
-        heroBg.style.backgroundImage = `url('${getCover(top)}')`;
+        heroBg.style.backgroundImage = `url('${getProxiedImage(top.coverUrl)}')`;
         heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
         heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
         
-        // FIX TOMBOL BACA DI HERO
         heroReadBtn.onclick = () => window._openManga(top.id);
-        
         renderGrid(list, grid);
     }
 }
@@ -52,7 +50,7 @@ function renderGrid(list, container) {
         return `
             <div class="card" onclick="window._openManga('${m.id}')">
                 <div class="img-wrapper">
-                    <img src="${getCover(m)}" alt="${title}" loading="lazy" onerror="this.onerror=null; this.src='${fallbackImg}'">
+                    <img src="${getProxiedImage(m.coverUrl)}" alt="${title}" loading="lazy" onerror="this.onerror=null; this.src='${fallbackImg}'">
                 </div>
                 <div class="card-info">
                     <h4>${title}</h4>
@@ -69,7 +67,7 @@ window._openManga = async (id) => {
     if (!manga) return;
     
     currentManga = manga;
-    modalImg.src = getCover(manga);
+    modalImg.src = getProxiedImage(manga.coverUrl);
     modalImg.onerror = function() { this.onerror=null; this.src = fallbackImg; };
     modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
     modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
@@ -83,14 +81,12 @@ window._openManga = async (id) => {
 async function loadChapters(mangaId) {
     chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
     
-    // Ambil ID dan EN sekaligus biar ga bolong-bolong
     const jsonID = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=id`);
     const jsonEN = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en`);
     
     let rawChapters = [...(jsonID.data || []), ...(jsonEN.data || [])];
     let uniqueChapters = {};
     
-    // Gabungin biar ga duplikat. Prioritas bahasa ID.
     rawChapters.forEach(ch => {
         let num = ch.attributes.chapter;
         if (!num) return;
@@ -99,7 +95,6 @@ async function loadChapters(mangaId) {
         }
     });
 
-    // Sortir murni pakai Angka (Ch 1, 2, 3...)
     chapterFeed = Object.values(uniqueChapters).sort((a, b) => {
         let numA = parseFloat(a.attributes.chapter);
         let numB = parseFloat(b.attributes.chapter);
@@ -136,9 +131,12 @@ window._readChapter = async (index) => {
     const hash = json.chapter.hash;
     const pages = json.chapter.data;
     
-    readerImages.innerHTML = pages.map(page => 
-        `<img src="${baseUrl}/data/${hash}/${page}" alt="Page" loading="lazy">`
-    ).join('');
+    // FIX GAMBAR PECAH: Semua gambar di-proxy lewat Vercel
+    readerImages.innerHTML = pages.map(page => {
+        const rawUrl = `${baseUrl}/data/${hash}/${page}`;
+        const proxiedUrl = `${PROXY}?url=${encodeURIComponent(rawUrl)}`;
+        return `<img src="${proxiedUrl}" alt="Page" loading="lazy" onerror="this.style.display='none'">`;
+    }).join('');
     
     if (currentChapterIndex < chapterFeed.length - 1) {
         readerNext.style.display = 'flex';
