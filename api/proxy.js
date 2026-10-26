@@ -5,14 +5,20 @@ export default async function handler(req, res) {
     try {
         const response = await fetch(targetUrl, {
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
                 'Referer': 'https://mangadex.org/'
             }
         });
         
+        // Jika error (misal 404 / 403), langsung balikin status error
+        if (!response.ok) {
+            return res.status(response.status).send(response.statusText);
+        }
+
         const contentType = response.headers.get('content-type');
 
-        // JIKA GAMBAR, PROXY GAMBARNYA (Pake Cache biar ga request ulang)
+        // JIKA YANG DIMINTA ADALAH GAMBAR, PROXY GAMBARNYA
         if (contentType && contentType.startsWith('image/')) {
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
@@ -22,47 +28,52 @@ export default async function handler(req, res) {
         }
 
         // JIKA JSON (API MangaDex)
-        let data = await response.json();
+        if (contentType && contentType.includes('application/json')) {
+            let data = await response.json();
 
-        if (data && data.data) {
-            const processManga = async (m) => {
-                if (!m.relationships) return;
-                const coverRel = m.relationships.find(r => r.type === 'cover_art');
-                if (coverRel) {
-                    if (coverRel.attributes && coverRel.attributes.fileName) {
-                        m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.512.jpg`;
-                    } else if (coverRel.id) {
-                        try {
-                            const cRes = await fetch(`https://api.mangadex.org/cover/${coverRel.id}`);
-                            const cJson = await cRes.json();
-                            if (cJson.data && cJson.data.attributes) {
-                                m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${cJson.data.attributes.fileName}.512.jpg`;
-                            }
-                        } catch (e) {}
+            if (data && data.data) {
+                const processManga = async (m) => {
+                    if (!m.relationships) return;
+                    const coverRel = m.relationships.find(r => r.type === 'cover_art');
+                    if (coverRel) {
+                        if (coverRel.attributes && coverRel.attributes.fileName) {
+                            m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.512.jpg`;
+                        } else if (coverRel.id) {
+                            try {
+                                const cRes = await fetch(`https://api.mangadex.org/cover/${coverRel.id}`);
+                                const cJson = await cRes.json();
+                                if (cJson.data && cJson.data.attributes) {
+                                    m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${cJson.data.attributes.fileName}.512.jpg`;
+                                }
+                            } catch (e) {}
+                        }
                     }
-                }
-            };
+                };
 
-            if (Array.isArray(data.data)) {
-                await Promise.all(data.data.map(processManga));
-                
-                // Sortir Chapter 1, 2, 10, 10.5...
-                if (data.data.length > 0 && data.data[0].type === 'chapter') {
-                    data.data.sort((a, b) => {
-                        let numA = parseFloat(a.attributes.chapter);
-                        let numB = parseFloat(b.attributes.chapter);
-                        if (isNaN(numA)) numA = 999999;
-                        if (isNaN(numB)) numB = 999999;
-                        return numA - numB;
-                    });
+                if (Array.isArray(data.data)) {
+                    await Promise.all(data.data.map(processManga));
+                    
+                    // Sortir Chapter 1, 2, 10, 10.5...
+                    if (data.data.length > 0 && data.data[0].type === 'chapter') {
+                        data.data.sort((a, b) => {
+                            let numA = parseFloat(a.attributes.chapter);
+                            let numB = parseFloat(b.attributes.chapter);
+                            if (isNaN(numA)) numA = 999999;
+                            if (isNaN(numB)) numB = 999999;
+                            return numA - numB;
+                        });
+                    }
+                } else {
+                    await processManga(data.data);
                 }
-            } else {
-                await processManga(data.data);
             }
+
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            return res.status(200).json(data);
         }
 
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.status(200).json(data);
+        return res.status(400).send('Unsupported content type');
+
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
