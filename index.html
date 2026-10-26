@@ -8,13 +8,11 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- NAVBAR ATAS -->
     <nav class="navbar-top" id="navbarTop">
         <h1 class="logo" onclick="window.location.reload()"><span class="red">XSOCIETY</span>HUB</h1>
         <div class="nav-actions">
-            <select id="langSelect" class="lang-select">
-                <option value="id">🇮🇩 ID</option>
-                <option value="en">🇬🇧 EN</option>
+            <select id="langSelect" class="lang-select" style="display: none;">
+                <!-- Language selector hidden as we merge ID & EN now -->
             </select>
             <div class="search-box-top">
                 <input type="text" id="searchInput" placeholder="Cari manga...">
@@ -23,7 +21,6 @@
         </div>
     </nav>
 
-    <!-- DASHBOARD (HERO + GRID) -->
     <main id="dashboardView">
         <header class="hero" id="hero">
             <div class="hero-bg" id="heroBg"></div>
@@ -47,16 +44,14 @@
         </section>
     </main>
 
-    <!-- SEARCH VIEW -->
     <section id="searchView" class="container" style="display:none; padding-top: 100px;">
         <h3 class="section-title">Hasil Pencarian</h3>
-        <div class="grid" id="searchGrid"></div>
+        <div class="grid" id="searchGrid" style="margin-top:20px;"></div>
     </section>
 
-    <!-- DEVELOPER PROFILE VIEW -->
     <section id="devView" class="container" style="display:none; padding-top: 100px; padding-bottom: 120px;">
         <h3 class="section-title">Developer Profile</h3>
-        <div class="dev-card">
+        <div class="dev-card" style="margin-top:20px;">
             <h4>xs0ciety505 <span class="muted">(xs0cietyHUB)</span></h4>
             <p>Fullstack Developer & Cyber Security Enthusiast.</p>
             <div class="socials">
@@ -79,7 +74,6 @@
         </div>
     </section>
 
-    <!-- BOTTOM NAVBAR (Mobile Style) -->
     <nav class="navbar-bottom">
         <button class="nav-btn active" onclick="switchView('dashboard')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -95,12 +89,11 @@
         </button>
     </nav>
 
-    <!-- MODAL DETAIL -->
     <div class="modal-overlay" id="modal">
         <div class="modal-content">
             <button class="modal-close" id="closeModal">&times;</button>
             <div class="modal-body">
-                <img id="modalImg" src="" alt="Cover" onerror="this.src='https://via.placeholder.com/256x384/141414/e50914?text=No+Cover'">
+                <img id="modalImg" src="" alt="Cover">
                 <div class="modal-info">
                     <h3 id="modalTitle"></h3>
                     <p id="modalSynopsis"></p>
@@ -110,7 +103,6 @@
         </div>
     </div>
 
-    <!-- READER -->
     <div class="reader-overlay" id="reader">
         <button class="reader-close" id="closeReader">&times;</button>
         <div class="reader-content" id="readerImages"></div>
