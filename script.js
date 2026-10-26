@@ -38,7 +38,6 @@ async function loadPopular() {
         heroBg.style.backgroundImage = `url('${getProxiedImage(top.coverUrl)}')`;
         heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
         heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
-        
         heroReadBtn.onclick = () => window._openManga(top.id);
         renderGrid(list, grid);
     }
@@ -78,15 +77,38 @@ window._openManga = async (id) => {
     loadChapters(id);
 };
 
+// FUNGSI PAGINATION: NGAMBIL SEMUA CHAPTER SAMPAI HABIS
+async function fetchAllChapters(mangaId, lang) {
+    let offset = 0;
+    let allData = [];
+    let hasMore = true;
+    
+    while (hasMore) {
+        const json = await proxyFetch(`/manga/${mangaId}/feed?limit=500&offset=${offset}&translatedLanguage[]=${lang}`);
+        if (json.data && json.data.length > 0) {
+            allData = allData.concat(json.data);
+            offset += 500;
+            if (json.data.length < 500) hasMore = false;
+        } else {
+            hasMore = false;
+        }
+    }
+    return allData;
+}
+
 async function loadChapters(mangaId) {
-    chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
+    chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter (mohon tunggu)...</p>';
     
-    const jsonID = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=id`);
-    const jsonEN = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en`);
+    // Tarik semua data ID & EN (dengan pagination)
+    const [idChaps, enChaps] = await Promise.all([
+        fetchAllChapters(mangaId, 'id'),
+        fetchAllChapters(mangaId, 'en')
+    ]);
     
-    let rawChapters = [...(jsonID.data || []), ...(jsonEN.data || [])];
+    let rawChapters = [...idChaps, ...enChaps];
     let uniqueChapters = {};
     
+    // Gabungin biar ga duplikat, prioritas ID
     rawChapters.forEach(ch => {
         let num = ch.attributes.chapter;
         if (!num) return;
@@ -95,11 +117,12 @@ async function loadChapters(mangaId) {
         }
     });
 
+    // Sortir pakai desimal (1, 2, 10, 10.5, 11)
     chapterFeed = Object.values(uniqueChapters).sort((a, b) => {
         let numA = parseFloat(a.attributes.chapter);
         let numB = parseFloat(b.attributes.chapter);
-        if (isNaN(numA)) numA = 9999;
-        if (isNaN(numB)) numB = 9999;
+        if (isNaN(numA)) numA = 999999;
+        if (isNaN(numB)) numB = 999999;
         return numA - numB;
     });
 
@@ -129,13 +152,16 @@ window._readChapter = async (index) => {
     const json = await proxyFetch(`/at-home/server/${ch.id}`);
     const baseUrl = json.baseUrl;
     const hash = json.chapter.hash;
-    const pages = json.chapter.data;
     
-    // FIX GAMBAR PECAH: Semua gambar di-proxy lewat Vercel
+    // FIX LEMOT: Pakai Data Saver (Gambar kompresi, load 5x lebih cepat)
+    const pages = json.chapter.dataSaver || json.chapter.data;
+    const qualityPath = json.chapter.dataSaver ? 'data-saver' : 'data';
+    
     readerImages.innerHTML = pages.map(page => {
-        const rawUrl = `${baseUrl}/data/${hash}/${page}`;
+        const rawUrl = `${baseUrl}/${qualityPath}/${hash}/${page}`;
         const proxiedUrl = `${PROXY}?url=${encodeURIComponent(rawUrl)}`;
-        return `<img src="${proxiedUrl}" alt="Page" loading="lazy" onerror="this.style.display='none'">`;
+        // Tambahkan loading="lazy" biar gambar ke-10 ga nge-block gambar ke-1
+        return `<img src="${proxiedUrl}" alt="Page" loading="lazy">`;
     }).join('');
     
     if (currentChapterIndex < chapterFeed.length - 1) {
