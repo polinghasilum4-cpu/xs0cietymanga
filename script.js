@@ -161,4 +161,66 @@ window._readChapter = async (index) => {
 
 // Deteksi scroll abis
 let scrollTimeout;
-function
+function handleScrollEnd() {
+    if (!reader.classList.contains('active')) return;
+    const scrollPos = window.innerHeight + window.scrollY;
+    const bodyHeight = document.body.offsetHeight;
+    
+    if (scrollPos >= bodyHeight - 100) {
+        if (currentChapterIndex < chapterFeed.length - 1) {
+            readerNext.style.display = 'flex';
+        }
+    }
+}
+
+// 7. Search
+let searchTimeout;
+searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const q = e.target.value.trim();
+    if (q.length < 3) return;
+    
+    searchTimeout = setTimeout(async () => {
+        searchGrid.innerHTML = '<p style="color:#888;">Mencari...</p>';
+        try {
+            const res = await fetch(`${PROXY}?path=/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`);
+            const json = await res.json();
+            if (json.data) renderGrid(json.data, searchGrid);
+        } catch (err) {
+            searchGrid.innerHTML = '<p style="color:#888;">Gagal mencari.</p>';
+        }
+    }, 600);
+});
+
+// 8. Navigation Logic
+window.switchView = (view) => {
+    document.getElementById('dashboardView').style.display = view === 'dashboard' ? 'block' : 'none';
+    document.getElementById('searchView').style.display = view === 'search' ? 'block' : 'none';
+    document.getElementById('devView').style.display = view === 'dev' ? 'block' : 'none';
+    
+    // Update active button
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    if (view === 'dashboard') document.querySelectorAll('.nav-btn')[0].classList.add('active');
+    if (view === 'search') document.querySelectorAll('.nav-btn')[1].classList.add('active');
+    if (view === 'dev') document.querySelectorAll('.nav-btn')[2].classList.add('active');
+    
+    window.scrollTo(0, 0);
+};
+
+// 9. Scroll Navbar Effect
+window.addEventListener('scroll', () => {
+    if (window.scrollY > 50) navbarTop.classList.add('scrolled');
+    else navbarTop.classList.remove('scrolled');
+});
+
+// Close Handlers
+closeModal.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
+closeReader.onclick = () => { 
+    reader.classList.remove('active'); 
+    document.body.style.overflow = ''; 
+    window.removeEventListener('scroll', handleScrollEnd);
+};
+modal.addEventListener('click', (e) => { if (e.target === modal) closeModal.onclick(); });
+
+// Init
+loadPopular();
