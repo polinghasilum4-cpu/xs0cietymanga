@@ -77,7 +77,6 @@ window._openManga = async (id) => {
     loadChapters(id);
 };
 
-// FUNGSI PAGINATION: NGAMBIL SEMUA CHAPTER SAMPAI HABIS
 async function fetchAllChapters(mangaId, lang) {
     let offset = 0;
     let allData = [];
@@ -99,7 +98,6 @@ async function fetchAllChapters(mangaId, lang) {
 async function loadChapters(mangaId) {
     chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter (mohon tunggu)...</p>';
     
-    // Tarik semua data ID & EN (dengan pagination)
     const [idChaps, enChaps] = await Promise.all([
         fetchAllChapters(mangaId, 'id'),
         fetchAllChapters(mangaId, 'en')
@@ -108,7 +106,6 @@ async function loadChapters(mangaId) {
     let rawChapters = [...idChaps, ...enChaps];
     let uniqueChapters = {};
     
-    // Gabungin biar ga duplikat, prioritas ID
     rawChapters.forEach(ch => {
         let num = ch.attributes.chapter;
         if (!num) return;
@@ -117,7 +114,6 @@ async function loadChapters(mangaId) {
         }
     });
 
-    // Sortir pakai desimal (1, 2, 10, 10.5, 11)
     chapterFeed = Object.values(uniqueChapters).sort((a, b) => {
         let numA = parseFloat(a.attributes.chapter);
         let numB = parseFloat(b.attributes.chapter);
@@ -149,24 +145,39 @@ window._readChapter = async (index) => {
     modal.classList.remove('active');
     reader.scrollTop = 0;
     
-    const json = await proxyFetch(`/at-home/server/${ch.id}`);
-    const baseUrl = json.baseUrl;
-    const hash = json.chapter.hash;
-    
-    // FIX LEMOT: Pakai Data Saver (Gambar kompresi, load 5x lebih cepat)
-    const pages = json.chapter.dataSaver || json.chapter.data;
-    const qualityPath = json.chapter.dataSaver ? 'data-saver' : 'data';
-    
-    readerImages.innerHTML = pages.map(page => {
-        const rawUrl = `${baseUrl}/${qualityPath}/${hash}/${page}`;
-        const proxiedUrl = `${PROXY}?url=${encodeURIComponent(rawUrl)}`;
-        // Tambahkan loading="lazy" biar gambar ke-10 ga nge-block gambar ke-1
-        return `<img src="${proxiedUrl}" alt="Page" loading="lazy">`;
-    }).join('');
-    
-    if (currentChapterIndex < chapterFeed.length - 1) {
-        readerNext.style.display = 'flex';
-        nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
+    try {
+        const json = await proxyFetch(`/at-home/server/${ch.id}`);
+        
+        // HANDLE ERROR: Kalau chapter eksternal / hash ga ada, jangan nge-blank
+        if (!json || !json.baseUrl || !json.chapter || !json.chapter.hash) {
+            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Chapter ini merupakan External Chapter (seperti MangaPlus) dan tidak di-host di MangaDex. Silakan pilih chapter lain.</p>';
+            return;
+        }
+
+        const baseUrl = json.baseUrl;
+        const hash = json.chapter.hash;
+        
+        // Pake dataSaver biar cepet
+        const pages = json.chapter.dataSaver || json.chapter.data;
+        const qualityPath = json.chapter.dataSaver ? 'data-saver' : 'data';
+        
+        if (!pages || pages.length === 0) {
+            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px;">Gambar tidak ditemukan.</p>';
+            return;
+        }
+
+        readerImages.innerHTML = pages.map(page => {
+            const rawUrl = `${baseUrl}/${qualityPath}/${hash}/${page}`;
+            const proxiedUrl = `${PROXY}?url=${encodeURIComponent(rawUrl)}`;
+            return `<img src="${proxiedUrl}" alt="Page" loading="lazy">`;
+        }).join('');
+        
+        if (currentChapterIndex < chapterFeed.length - 1) {
+            readerNext.style.display = 'flex';
+            nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
+        }
+    } catch (err) {
+        readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gagal memuat gambar. Server MangaDex sedang down atau diblokir. Coba chapter lain.</p>';
     }
 };
 
