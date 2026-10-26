@@ -11,9 +11,7 @@ export default async function handler(req, res) {
             }
         });
         
-        if (!response.ok) {
-            return res.status(response.status).send(response.statusText);
-        }
+        if (!response.ok) return res.status(response.status).send(response.statusText);
 
         const contentType = response.headers.get('content-type');
 
@@ -49,7 +47,6 @@ export default async function handler(req, res) {
 
                 if (Array.isArray(data.data)) {
                     await Promise.all(data.data.map(processManga));
-                    
                     if (data.data.length > 0 && data.data[0].type === 'chapter') {
                         data.data.sort((a, b) => {
                             let numA = parseFloat(a.attributes.chapter);
@@ -69,7 +66,6 @@ export default async function handler(req, res) {
         }
 
         return res.status(400).send('Unsupported content type');
-
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
