@@ -123,12 +123,22 @@ async function loadChapters(mangaId) {
     });
 
     if (chapterFeed.length > 0) {
-        chapterList.innerHTML = chapterFeed.map((ch, idx) => `
-            <button class="chapter-btn" onclick="window._readChapter(${idx})">
-                Ch. ${ch.attributes.chapter} ${ch.attributes.title ? '- ' + ch.attributes.title : ''} 
-                <span style="font-size:0.7rem; color:#888;">(${ch.attributes.translatedLanguage.toUpperCase()})</span>
-            </button>
-        `).join('');
+        chapterList.innerHTML = chapterFeed.map((ch, idx) => {
+            const isExternal = !!ch.attributes.externalUrl;
+            const onclickAction = isExternal 
+                ? `onclick="window.open('${ch.attributes.externalUrl}', '_blank')"`
+                : `onclick="window._readChapter(${idx})"`;
+            
+            const label = isExternal ? 'Web Resmi' : ch.attributes.translatedLanguage.toUpperCase();
+            const color = isExternal ? '#e50914' : '#888';
+
+            return `
+                <button class="chapter-btn" ${onclickAction}>
+                    Ch. ${ch.attributes.chapter} ${ch.attributes.title ? '- ' + ch.attributes.title : ''} 
+                    <span style="font-size:0.7rem; color:${color};">(${label})</span>
+                </button>
+            `;
+        }).join('');
     } else {
         chapterList.innerHTML = '<p style="color:#888; padding:10px;">Chapter belum tersedia.</p>';
     }
@@ -139,6 +149,12 @@ window._readChapter = async (index) => {
     currentChapterIndex = index;
     const ch = chapterFeed[index];
     
+    // Jika masih nyasar ke chapter eksternal, tendang ke web aslinya
+    if (ch.attributes.externalUrl) {
+        window.open(ch.attributes.externalUrl, '_blank');
+        return;
+    }
+    
     readerImages.innerHTML = '<p style="color:white; text-align:center; margin-top:50px;">Memuat halaman...</p>';
     readerNext.style.display = 'none';
     reader.classList.add('active');
@@ -148,16 +164,14 @@ window._readChapter = async (index) => {
     try {
         const json = await proxyFetch(`/at-home/server/${ch.id}`);
         
-        // HANDLE ERROR: Kalau chapter eksternal / hash ga ada, jangan nge-blank
         if (!json || !json.baseUrl || !json.chapter || !json.chapter.hash) {
-            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Chapter ini merupakan External Chapter (seperti MangaPlus) dan tidak di-host di MangaDex. Silakan pilih chapter lain.</p>';
+            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gambar chapter ini telah dihapus (DMCA) dari MangaDex. Silakan pilih chapter lain.</p>';
             return;
         }
 
         const baseUrl = json.baseUrl;
         const hash = json.chapter.hash;
         
-        // Pake dataSaver biar cepet
         const pages = json.chapter.dataSaver || json.chapter.data;
         const qualityPath = json.chapter.dataSaver ? 'data-saver' : 'data';
         
@@ -177,7 +191,7 @@ window._readChapter = async (index) => {
             nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
         }
     } catch (err) {
-        readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gagal memuat gambar. Server MangaDex sedang down atau diblokir. Coba chapter lain.</p>';
+        readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gagal memuat gambar. Coba chapter lain.</p>';
     }
 };
 
