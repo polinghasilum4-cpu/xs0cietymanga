@@ -10,6 +10,11 @@ button { font-family: inherit; }
 .logo { font-size: 1.4rem; font-weight: 900; cursor: pointer; letter-spacing: -0.5px; }
 .logo .red { color: var(--red); }
 .nav-actions { display: flex; align-items: center; gap: 12px; }
+
+.bgm-btn { background: #222; border: 1px solid #333; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+.bgm-btn:hover { background: var(--red); border-color: var(--red); }
+.bgm-btn svg { width: 16px; height: 16px; }
+
 .search-box-top { position: relative; display: none; }
 @media (min-width: 768px) { .search-box-top { display: block; } }
 .search-box-top input { background: #111; border: 1px solid #333; color: white; padding: 8px 35px 8px 12px; border-radius: 4px; outline: none; width: 220px; font-size: 0.85rem; transition: all 0.3s ease; }
