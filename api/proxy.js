@@ -12,12 +12,12 @@ export default async function handler(req, res) {
         
         const contentType = response.headers.get('content-type');
 
-        // JIKA YANG DIMINTA ADALAH GAMBAR, PROXY GAMBARNYA (Bypass blokir ISP)
+        // JIKA GAMBAR, PROXY GAMBARNYA (Pake Cache biar ga request ulang)
         if (contentType && contentType.startsWith('image/')) {
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             res.setHeader('Content-Type', contentType);
-            res.setHeader('Cache-Control', 'public, max-age=86400');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
             return res.send(buffer);
         }
 
@@ -46,13 +46,13 @@ export default async function handler(req, res) {
             if (Array.isArray(data.data)) {
                 await Promise.all(data.data.map(processManga));
                 
-                // Sortir Chapter 1, 2, 3...
+                // Sortir Chapter 1, 2, 10, 10.5...
                 if (data.data.length > 0 && data.data[0].type === 'chapter') {
                     data.data.sort((a, b) => {
                         let numA = parseFloat(a.attributes.chapter);
                         let numB = parseFloat(b.attributes.chapter);
-                        if (isNaN(numA)) numA = 9999;
-                        if (isNaN(numB)) numB = 9999;
+                        if (isNaN(numA)) numA = 999999;
+                        if (isNaN(numB)) numB = 999999;
                         return numA - numB;
                     });
                 }
