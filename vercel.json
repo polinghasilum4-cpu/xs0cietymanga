@@ -1,7 +1,7 @@
 {
   "cleanUrls": true,
   "functions": {
-    "api/manga.js": {
+    "api/proxy.js": {
       "memory": 128,
       "maxDuration": 10
     }
