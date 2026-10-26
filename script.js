@@ -38,7 +38,10 @@ async function loadPopular() {
         heroBg.style.backgroundImage = `url('${getCover(top)}')`;
         heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
         heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
-        heroReadBtn.onclick = () => openManga(top);
+        
+        // FIX TOMBOL BACA DI HERO
+        heroReadBtn.onclick = () => window._openManga(top.id);
+        
         renderGrid(list, grid);
     }
 }
@@ -49,7 +52,7 @@ function renderGrid(list, container) {
         return `
             <div class="card" onclick="window._openManga('${m.id}')">
                 <div class="img-wrapper">
-                    <img src="${getCover(m)}" alt="${title}" loading="lazy" onerror="this.src='${fallbackImg}'">
+                    <img src="${getCover(m)}" alt="${title}" loading="lazy" onerror="this.onerror=null; this.src='${fallbackImg}'">
                 </div>
                 <div class="card-info">
                     <h4>${title}</h4>
@@ -67,7 +70,7 @@ window._openManga = async (id) => {
     
     currentManga = manga;
     modalImg.src = getCover(manga);
-    modalImg.onerror = function() { this.src = fallbackImg; };
+    modalImg.onerror = function() { this.onerror=null; this.src = fallbackImg; };
     modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
     modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
     
@@ -80,14 +83,14 @@ window._openManga = async (id) => {
 async function loadChapters(mangaId) {
     chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
     
-    // Ambil ID dan EN sekaligus
+    // Ambil ID dan EN sekaligus biar ga bolong-bolong
     const jsonID = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=id`);
     const jsonEN = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=en`);
     
     let rawChapters = [...(jsonID.data || []), ...(jsonEN.data || [])];
     let uniqueChapters = {};
     
-    // Gabungin biar ga duplikat
+    // Gabungin biar ga duplikat. Prioritas bahasa ID.
     rawChapters.forEach(ch => {
         let num = ch.attributes.chapter;
         if (!num) return;
@@ -96,9 +99,13 @@ async function loadChapters(mangaId) {
         }
     });
 
-    // Sortir pakai angka (Ch 1, 2, 10...)
+    // Sortir murni pakai Angka (Ch 1, 2, 3...)
     chapterFeed = Object.values(uniqueChapters).sort((a, b) => {
-        return (parseFloat(a.attributes.chapter) || 0) - (parseFloat(b.attributes.chapter) || 0);
+        let numA = parseFloat(a.attributes.chapter);
+        let numB = parseFloat(b.attributes.chapter);
+        if (isNaN(numA)) numA = 9999;
+        if (isNaN(numB)) numB = 9999;
+        return numA - numB;
     });
 
     if (chapterFeed.length > 0) {
