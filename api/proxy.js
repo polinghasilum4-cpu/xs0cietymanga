@@ -16,11 +16,13 @@ export default async function handler(req, res) {
                     if (coverRel.attributes && coverRel.attributes.fileName) {
                         m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.512.jpg`;
                     } else if (coverRel.id) {
-                        const cRes = await fetch(`https://api.mangadex.org/cover/${coverRel.id}`);
-                        const cJson = await cRes.json();
-                        if (cJson.data && cJson.data.attributes) {
-                            m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${cJson.data.attributes.fileName}.512.jpg`;
-                        }
+                        try {
+                            const cRes = await fetch(`https://api.mangadex.org/cover/${coverRel.id}`);
+                            const cJson = await cRes.json();
+                            if (cJson.data && cJson.data.attributes) {
+                                m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${cJson.data.attributes.fileName}.512.jpg`;
+                            }
+                        } catch (e) {}
                     }
                 }
             };
@@ -28,10 +30,13 @@ export default async function handler(req, res) {
             if (Array.isArray(data.data)) {
                 await Promise.all(data.data.map(processManga));
                 
+                // Sortir Chapter Angka (Biar 1, 2, 3 bukan 10, 2)
                 if (data.data.length > 0 && data.data[0].type === 'chapter') {
                     data.data.sort((a, b) => {
-                        let numA = parseFloat(a.attributes.chapter) || 0;
-                        let numB = parseFloat(b.attributes.chapter) || 0;
+                        let numA = parseFloat(a.attributes.chapter);
+                        let numB = parseFloat(b.attributes.chapter);
+                        if (isNaN(numA)) numA = 9999;
+                        if (isNaN(numB)) numB = 9999;
                         return numA - numB;
                     });
                 }
