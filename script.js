@@ -1,4 +1,6 @@
 const PROXY = '/api/proxy';
+const MDX = 'https://api.mangadex.org';
+
 let currentLang = localStorage.getItem('lang') || 'id';
 let currentManga = null;
 let chapterFeed = []; 
@@ -26,8 +28,12 @@ const readerImages = document.getElementById('readerImages');
 const readerNext = document.getElementById('readerNext');
 const nextChapterBtn = document.getElementById('nextChapterBtn');
 
-// Helper Image
-const getCover = (m) => m.coverUrl || 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22384%22%3E%3Crect width=%22100%25%22 height=%22100%25%22 fill=%22%23141414%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%23e50914%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2220%22 text-anchor=%22middle%22 dy=%22.3em%22%3EXSOCIETY%3C/text%3E%3C/svg%3E';
+// Helper Image Fallback (Kotak item tulisan XSOCIETY)
+const fallbackImg = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="256" height="384"%3E%3Crect width="100%25" height="100%25" fill="%23141414"/%3E%3Ctext x="50%25" y="50%25" fill="%23e50914" font-family="sans-serif" font-weight="bold" font-size="24" text-anchor="middle" dy=".3em"%3EXSOCIETY%3C/text%3E%3C/svg%3E';
+const getCover = (m) => m.coverUrl || fallbackImg;
+
+// Fungsi bantu untuk encode URL ke Proxy
+const proxyFetch = (endpoint) => fetch(`${PROXY}?url=${encodeURIComponent(MDX + endpoint)}`).then(r => r.json());
 
 // 1. Set Bahasa
 langSelect.value = currentLang;
@@ -42,8 +48,7 @@ langSelect.addEventListener('change', (e) => {
 async function loadPopular() {
     grid.innerHTML = '<p style="color:#888; padding:20px;">Memuat data...</p>';
     try {
-        const res = await fetch(`${PROXY}?path=/manga?limit=12&includes[]=cover_art&order[followedCount]=desc`);
-        const json = await res.json();
+        const json = await proxyFetch('/manga?limit=12&includes[]=cover_art&order[followedCount]=desc');
         const list = json.data || [];
         
         if (list.length > 0) {
@@ -65,7 +70,7 @@ function renderGrid(list, container) {
         const title = m.attributes.title.en || Object.values(m.attributes.title)[0] || 'Untitled';
         return `
             <div class="card" onclick="window._openManga('${m.id}')">
-                <img src="${getCover(m)}" alt="${title}" loading="lazy">
+                <img src="${getCover(m)}" alt="${title}" loading="lazy" onerror="this.src='${fallbackImg}'">
                 <div class="card-info">
                     <h4>${title}</h4>
                     <span>${m.attributes.status || 'Unknown'}</span>
@@ -78,14 +83,13 @@ function renderGrid(list, container) {
 // 4. Open Modal
 window._openManga = async (id) => {
     try {
-        const res = await fetch(`${PROXY}?path=/manga/${id}?includes[]=cover_art`);
-        const json = await res.json();
+        const json = await proxyFetch(`/manga/${id}?includes[]=cover_art`);
         const manga = json.data;
         if (!manga) return;
         
         currentManga = manga;
         modalImg.src = getCover(manga);
-        modalImg.onerror = function() { this.src = getCover({}); }; // Fallback anti broken img
+        modalImg.onerror = function() { this.src = fallbackImg; };
         modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
         modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
         
@@ -98,14 +102,12 @@ window._openManga = async (id) => {
     }
 };
 
-// 5. Load Chapters (Sortir dari Proxy)
+// 5. Load Chapters
 async function loadChapters(mangaId) {
     chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
     try {
-        // Tambahkan order[chapter]=asc biar API nya juga ngebantu sortir
-        const res = await fetch(`${PROXY}?path=/manga/${mangaId}/feed?limit=500&translatedLanguage[]=${currentLang}&order[chapter]=asc`);
-        const json = await res.json();
-        chapterFeed = json.data || []; // Data ini UDAH DISORTIR SAMA PROXY.JS
+        const json = await proxyFetch(`/manga/${mangaId}/feed?limit=500&translatedLanguage[]=${currentLang}`);
+        chapterFeed = json.data || []; // Array ini UDAH DISORTIR OLEH API PROXY
         
         if (chapterFeed.length > 0) {
             chapterList.innerHTML = chapterFeed.map((ch, idx) => `
@@ -134,8 +136,7 @@ window._readChapter = async (index) => {
     reader.scrollTop = 0;
     
     try {
-        const res = await fetch(`${PROXY}?path=/at-home/server/${ch.id}`);
-        const json = await res.json();
+        const json = await proxyFetch(`/at-home/server/${ch.id}`);
         const baseUrl = json.baseUrl;
         const hash = json.chapter.hash;
         const pages = json.chapter.data;
@@ -158,17 +159,13 @@ window._readChapter = async (index) => {
 let scrollTimeout;
 function handleScrollEnd() {
     if (!reader.classList.contains('active')) return;
-    const scrollPos = window.innerHeight + window.scrollY;
-    const bodyHeight = document.body.offsetHeight;
-    
-    if (scrollPos >= bodyHeight - 100) {
-        if (currentChapterIndex < chapterFeed.length - 1) {
-            readerNext.style.display = 'flex';
-        }
+    if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 100) {
+        if (currentChapterIndex < chapterFeed.length - 1) readerNext.style.display = 'flex';
     }
 }
 
 // 7. Pencarian
+let searchTimeout;
 searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     const q = e.target.value.trim();
@@ -177,8 +174,7 @@ searchInput.addEventListener('input', (e) => {
     searchTimeout = setTimeout(async () => {
         searchGrid.innerHTML = '<p style="color:#888;">Mencari...</p>';
         try {
-            const res = await fetch(`${PROXY}?path=/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`);
-            const json = await res.json();
+            const json = await proxyFetch(`/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`);
             if (json.data) renderGrid(json.data, searchGrid);
         } catch (err) {
             searchGrid.innerHTML = '<p style="color:#888;">Gagal mencari.</p>';
