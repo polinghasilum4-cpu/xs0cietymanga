@@ -1,7 +1,7 @@
 const PROXY = '/api/proxy';
 let currentLang = localStorage.getItem('lang') || 'id';
 let currentManga = null;
-let chapterFeed = []; // Simpan list chapter buat Next
+let chapterFeed = []; 
 let currentChapterIndex = -1;
 
 // DOM
@@ -14,21 +14,20 @@ const heroTitle = document.getElementById('heroTitle');
 const heroSynopsis = document.getElementById('heroSynopsis');
 const heroReadBtn = document.getElementById('heroReadBtn');
 const navbarTop = document.getElementById('navbarTop');
-
-// Modal
 const modal = document.getElementById('modal');
 const closeModal = document.getElementById('closeModal');
 const modalImg = document.getElementById('modalImg');
 const modalTitle = document.getElementById('modalTitle');
 const modalSynopsis = document.getElementById('modalSynopsis');
 const chapterList = document.getElementById('chapterList');
-
-// Reader
 const reader = document.getElementById('reader');
 const closeReader = document.getElementById('closeReader');
 const readerImages = document.getElementById('readerImages');
 const readerNext = document.getElementById('readerNext');
 const nextChapterBtn = document.getElementById('nextChapterBtn');
+
+// Helper Image
+const getCover = (m) => m.coverUrl || 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22256%22 height=%22384%22%3E%3Crect width=%22100%25%22 height=%22100%25%22 fill=%22%23141414%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 fill=%22%23e50914%22 font-family=%22sans-serif%22 font-weight=%22bold%22 font-size=%2220%22 text-anchor=%22middle%22 dy=%22.3em%22%3EXSOCIETY%3C/text%3E%3C/svg%3E';
 
 // 1. Set Bahasa
 langSelect.value = currentLang;
@@ -36,7 +35,7 @@ langSelect.addEventListener('change', (e) => {
     currentLang = e.target.value;
     localStorage.setItem('lang', currentLang);
     loadPopular();
-    if(currentManga) loadChapters(currentManga.id); // Reload chapter if modal open
+    if(currentManga) loadChapters(currentManga.id);
 });
 
 // 2. Load Popular
@@ -49,7 +48,7 @@ async function loadPopular() {
         
         if (list.length > 0) {
             const top = list[0];
-            heroBg.style.backgroundImage = `url('${top.coverUrl || ''}')`;
+            heroBg.style.backgroundImage = `url('${getCover(top)}')`;
             heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
             heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
             heroReadBtn.onclick = () => openModal(top);
@@ -64,10 +63,9 @@ async function loadPopular() {
 function renderGrid(list, container) {
     container.innerHTML = list.map(m => {
         const title = m.attributes.title.en || Object.values(m.attributes.title)[0] || 'Untitled';
-        const cover = m.coverUrl || 'https://via.placeholder.com/256x384/141414/e50914?text=No+Cover';
         return `
             <div class="card" onclick="window._openManga('${m.id}')">
-                <img src="${cover}" alt="${title}" loading="lazy">
+                <img src="${getCover(m)}" alt="${title}" loading="lazy">
                 <div class="card-info">
                     <h4>${title}</h4>
                     <span>${m.attributes.status || 'Unknown'}</span>
@@ -86,7 +84,8 @@ window._openManga = async (id) => {
         if (!manga) return;
         
         currentManga = manga;
-        modalImg.src = manga.coverUrl || 'https://via.placeholder.com/256x384/141414/e50914?text=No+Cover';
+        modalImg.src = getCover(manga);
+        modalImg.onerror = function() { this.src = getCover({}); }; // Fallback anti broken img
         modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
         modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
         
@@ -99,13 +98,14 @@ window._openManga = async (id) => {
     }
 };
 
-// 5. Load Chapters (Filter by Language)
+// 5. Load Chapters (Sortir dari Proxy)
 async function loadChapters(mangaId) {
     chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
     try {
-        const res = await fetch(`${PROXY}?path=/manga/${mangaId}/feed?limit=100&translatedLanguage[]=${currentLang}&order[chapter]=desc`);
+        // Tambahkan order[chapter]=asc biar API nya juga ngebantu sortir
+        const res = await fetch(`${PROXY}?path=/manga/${mangaId}/feed?limit=500&translatedLanguage[]=${currentLang}&order[chapter]=asc`);
         const json = await res.json();
-        chapterFeed = json.data || [];
+        chapterFeed = json.data || []; // Data ini UDAH DISORTIR SAMA PROXY.JS
         
         if (chapterFeed.length > 0) {
             chapterList.innerHTML = chapterFeed.map((ch, idx) => `
@@ -121,7 +121,7 @@ async function loadChapters(mangaId) {
     }
 }
 
-// 6. Read Chapter & Handle Next
+// 6. Baca Chapter
 window._readChapter = async (index) => {
     if (index < 0 || index >= chapterFeed.length) return;
     currentChapterIndex = index;
@@ -144,22 +144,17 @@ window._readChapter = async (index) => {
             `<img src="${baseUrl}/data/${hash}/${page}" alt="Page" loading="lazy">`
         ).join('');
         
-        // Tampilkan tombol Next kalau bukan chapter terakhir
         if (currentChapterIndex < chapterFeed.length - 1) {
             readerNext.style.display = 'flex';
             nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
-        } else {
-            readerNext.style.display = 'none';
         }
         
-        // Detect scroll abis di paling bawah
         window.addEventListener('scroll', handleScrollEnd);
     } catch (err) {
         readerImages.innerHTML = '<p style="color:red; text-align:center; margin-top:50px;">Gagal memuat gambar.</p>';
     }
 };
 
-// Deteksi scroll abis
 let scrollTimeout;
 function handleScrollEnd() {
     if (!reader.classList.contains('active')) return;
@@ -173,8 +168,7 @@ function handleScrollEnd() {
     }
 }
 
-// 7. Search
-let searchTimeout;
+// 7. Pencarian
 searchInput.addEventListener('input', (e) => {
     clearTimeout(searchTimeout);
     const q = e.target.value.trim();
@@ -192,13 +186,12 @@ searchInput.addEventListener('input', (e) => {
     }, 600);
 });
 
-// 8. Navigation Logic
+// 8. Navigation
 window.switchView = (view) => {
     document.getElementById('dashboardView').style.display = view === 'dashboard' ? 'block' : 'none';
     document.getElementById('searchView').style.display = view === 'search' ? 'block' : 'none';
     document.getElementById('devView').style.display = view === 'dev' ? 'block' : 'none';
     
-    // Update active button
     document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
     if (view === 'dashboard') document.querySelectorAll('.nav-btn')[0].classList.add('active');
     if (view === 'search') document.querySelectorAll('.nav-btn')[1].classList.add('active');
@@ -207,13 +200,11 @@ window.switchView = (view) => {
     window.scrollTo(0, 0);
 };
 
-// 9. Scroll Navbar Effect
 window.addEventListener('scroll', () => {
     if (window.scrollY > 50) navbarTop.classList.add('scrolled');
     else navbarTop.classList.remove('scrolled');
 });
 
-// Close Handlers
 closeModal.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
 closeReader.onclick = () => { 
     reader.classList.remove('active'); 
@@ -222,5 +213,4 @@ closeReader.onclick = () => {
 };
 modal.addEventListener('click', (e) => { if (e.target === modal) closeModal.onclick(); });
 
-// Init
 loadPopular();
