@@ -11,14 +11,12 @@ export default async function handler(req, res) {
             }
         });
         
-        // Jika error (misal 404 / 403), langsung balikin status error
         if (!response.ok) {
             return res.status(response.status).send(response.statusText);
         }
 
         const contentType = response.headers.get('content-type');
 
-        // JIKA YANG DIMINTA ADALAH GAMBAR, PROXY GAMBARNYA
         if (contentType && contentType.startsWith('image/')) {
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
@@ -27,7 +25,6 @@ export default async function handler(req, res) {
             return res.send(buffer);
         }
 
-        // JIKA JSON (API MangaDex)
         if (contentType && contentType.includes('application/json')) {
             let data = await response.json();
 
@@ -53,7 +50,6 @@ export default async function handler(req, res) {
                 if (Array.isArray(data.data)) {
                     await Promise.all(data.data.map(processManga));
                     
-                    // Sortir Chapter 1, 2, 10, 10.5...
                     if (data.data.length > 0 && data.data[0].type === 'chapter') {
                         data.data.sort((a, b) => {
                             let numA = parseFloat(a.attributes.chapter);
