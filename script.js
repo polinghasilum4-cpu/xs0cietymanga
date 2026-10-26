@@ -24,6 +24,33 @@ const readerImages = document.getElementById('readerImages');
 const readerNext = document.getElementById('readerNext');
 const nextChapterBtn = document.getElementById('nextChapterBtn');
 
+// External Modal
+const extModal = document.getElementById('extModal');
+const closeExtModal = document.getElementById('closeExtModal');
+const extFrame = document.getElementById('extFrame');
+const extWarning = document.getElementById('extWarning');
+const extLink = document.getElementById('extLink');
+
+// BGM
+const bgm = document.getElementById('bgm');
+const bgmToggle = document.getElementById('bgmToggle');
+const iconPlay = document.getElementById('icon-play');
+const iconPause = document.getElementById('icon-pause');
+let isPlaying = false;
+
+bgmToggle.onclick = () => {
+    if (isPlaying) {
+        bgm.pause();
+        iconPlay.style.display = 'block';
+        iconPause.style.display = 'none';
+    } else {
+        bgm.play();
+        iconPlay.style.display = 'none';
+        iconPause.style.display = 'block';
+    }
+    isPlaying = !isPlaying;
+};
+
 const fallbackImg = 'data:image/svg+xml;charset=UTF-8,%3Csvg xmlns="http://www.w3.org/2000/svg" width="256" height="384"%3E%3Crect width="100%25" height="100%25" fill="%23141414"/%3E%3Ctext x="50%25" y="50%25" fill="%23e50914" font-family="sans-serif" font-weight="bold" font-size="24" text-anchor="middle" dy=".3em"%3EXSOCIETY%3C/text%3E%3C/svg%3E';
 const proxyFetch = (endpoint) => fetch(`${PROXY}?url=${encodeURIComponent(MDX + endpoint)}`).then(r => r.json());
 const getProxiedImage = (url) => url ? `${PROXY}?url=${encodeURIComponent(url)}` : fallbackImg;
@@ -77,6 +104,7 @@ window._openManga = async (id) => {
     loadChapters(id);
 };
 
+// PAGINATION (Tarik semua chapter sampe 1000+)
 async function fetchAllChapters(mangaId, lang) {
     let offset = 0;
     let allData = [];
@@ -125,10 +153,7 @@ async function loadChapters(mangaId) {
     if (chapterFeed.length > 0) {
         chapterList.innerHTML = chapterFeed.map((ch, idx) => {
             const isExternal = !!ch.attributes.externalUrl;
-            const onclickAction = isExternal 
-                ? `onclick="window.open('${ch.attributes.externalUrl}', '_blank')"`
-                : `onclick="window._readChapter(${idx})"`;
-            
+            const onclickAction = `onclick="window._readChapter(${idx})"`;
             const label = isExternal ? 'Web Resmi' : ch.attributes.translatedLanguage.toUpperCase();
             const color = isExternal ? '#e50914' : '#888';
 
@@ -149,12 +174,29 @@ window._readChapter = async (index) => {
     currentChapterIndex = index;
     const ch = chapterFeed[index];
     
-    // Jika masih nyasar ke chapter eksternal, tendang ke web aslinya
+    // JIKA CHAPTER EXTERNAL, BUKA MODAL IFRAME (BUKAN TAB BARU)
     if (ch.attributes.externalUrl) {
-        window.open(ch.attributes.externalUrl, '_blank');
+        extWarning.style.display = 'none'; // reset
+        extLink.href = ch.attributes.externalUrl;
+        extFrame.src = ch.attributes.externalUrl;
+        
+        // Deteksi kalau web ngeblokir iframe (X-Frame-Options)
+        setTimeout(() => {
+            try {
+                if (!extFrame.contentWindow || !extFrame.contentWindow.location.href) {
+                    throw new Error("blocked");
+                }
+            } catch (e) {
+                extWarning.style.display = 'block';
+            }
+        }, 2000);
+
+        extModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
         return;
     }
     
+    // CHAPTER NORMAL (MANGA)
     readerImages.innerHTML = '<p style="color:white; text-align:center; margin-top:50px;">Memuat halaman...</p>';
     readerNext.style.display = 'none';
     reader.classList.add('active');
@@ -165,7 +207,7 @@ window._readChapter = async (index) => {
         const json = await proxyFetch(`/at-home/server/${ch.id}`);
         
         if (!json || !json.baseUrl || !json.chapter || !json.chapter.hash) {
-            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gambar chapter ini telah dihapus (DMCA) dari MangaDex. Silakan pilih chapter lain.</p>';
+            readerImages.innerHTML = '<p style="color:#e50914; text-align:center; margin-top:50px; padding: 20px; font-weight:bold;">Gambar chapter ini telah dihapus (DMCA). Silakan pilih chapter lain.</p>';
             return;
         }
 
@@ -227,4 +269,5 @@ window.switchView = (view) => {
 
 closeModal.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
 closeReader.onclick = () => { reader.classList.remove('active'); document.body.style.overflow = ''; };
+closeExtModal.onclick = () => { extModal.classList.remove('active'); extFrame.src = ''; document.body.style.overflow = ''; };
 loadPopular();
