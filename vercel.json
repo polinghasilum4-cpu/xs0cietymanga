@@ -1,6 +1,9 @@
 {
   "cleanUrls": true,
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
-  ]
+  "functions": {
+    "api/manga.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  }
 }
