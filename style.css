@@ -9,16 +9,19 @@ button { font-family: inherit; }
 .navbar-top.scrolled { background: rgba(10, 10, 10, 0.98); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
 .logo { font-size: 1.4rem; font-weight: 900; cursor: pointer; letter-spacing: -0.5px; }
 .logo .red { color: var(--red); }
-.nav-actions { display: flex; align-items: center; gap: 12px; }
+.nav-actions { display: flex; align-items: center; gap: 10px; }
 
-.bgm-btn { background: #222; border: 1px solid #333; color: white; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+.lang-select { background: #111; border: 1px solid #333; color: white; padding: 6px 8px; border-radius: 4px; outline: none; font-size: 0.8rem; cursor: pointer; transition: 0.2s; }
+.lang-select:hover { border-color: var(--red); }
+
+.bgm-btn { background: #222; border: 1px solid #333; color: white; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
 .bgm-btn:hover { background: var(--red); border-color: var(--red); }
-.bgm-btn svg { width: 16px; height: 16px; }
+.bgm-btn svg { width: 14px; height: 14px; }
 
 .search-box-top { position: relative; display: none; }
 @media (min-width: 768px) { .search-box-top { display: block; } }
-.search-box-top input { background: #111; border: 1px solid #333; color: white; padding: 8px 35px 8px 12px; border-radius: 4px; outline: none; width: 220px; font-size: 0.85rem; transition: all 0.3s ease; }
-.search-box-top input:focus { border-color: var(--red); width: 280px; background: #000; }
+.search-box-top input { background: #111; border: 1px solid #333; color: white; padding: 8px 35px 8px 12px; border-radius: 4px; outline: none; width: 200px; font-size: 0.85rem; transition: all 0.3s ease; }
+.search-box-top input:focus { border-color: var(--red); width: 260px; background: #000; }
 .search-box-top svg { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 16px; color: var(--text-muted); }
 
 /* HERO */
