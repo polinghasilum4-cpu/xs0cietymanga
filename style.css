@@ -46,7 +46,6 @@ button { font-family: inherit; }
 .card { position: relative; border-radius: 6px; overflow: hidden; cursor: pointer; transition: transform 0.3s ease, z-index 0.3s ease; background: var(--card); border: 1px solid var(--border); display: flex; flex-direction: column; }
 .card:hover { transform: scale(1.05) translateY(-5px); z-index: 20; border-color: var(--red); box-shadow: 0 10px 25px rgba(229, 9, 20, 0.2); }
 
-/* FIX GAMBAR MELAR */
 .img-wrapper { position: relative; width: 100%; padding-top: 150%; background: #1a1a1a; overflow: hidden; }
 .img-wrapper img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 
@@ -82,13 +81,11 @@ button { font-family: inherit; }
 .modal-info h3 { font-size: 1.5rem; font-weight: 800; margin-bottom: 10px; color: white; }
 .modal-info p { color: #aaa; font-size: 0.85rem; margin-bottom: 20px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* CHAPTER LIST */
 .chapter-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; padding-right: 5px; -ms-overflow-style: none; scrollbar-width: none; }
 .chapter-list::-webkit-scrollbar { display: none; }
 .chapter-btn { background: #222; color: var(--text); border: 1px solid #333; padding: 12px 15px; text-align: left; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s ease; display: flex; justify-content: space-between; align-items: center; }
 .chapter-btn:hover { background: var(--red); border-color: var(--red); color: white; transform: translateX(5px); }
 
-/* READER */
 .reader-overlay { position: fixed; inset: 0; background: #000; z-index: 300; display: none; overflow-y: auto; }
 .reader-overlay.active { display: block; }
 .reader-close { position: fixed; top: 20px; right: 20px; background: var(--red); color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-size: 1.5rem; cursor: pointer; z-index: 310; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transition: 0.2s; }
@@ -98,7 +95,6 @@ button { font-family: inherit; }
 .reader-next { padding: 30px 20px 60px 20px; display: flex; justify-content: center; max-width: 800px; margin: 0 auto; }
 .reader-next .btn { width: 100%; justify-content: center; padding: 16px; font-size: 1rem; border-radius: 8px; }
 
-/* DEVELOPER */
 #devView { min-height: calc(100vh - 150px); }
 .dev-card { background: var(--card); padding: 24px; border-radius: 12px; border: 1px solid var(--border); max-width: 500px; margin: 0 auto; }
 .dev-card h4 { font-size: 1.4rem; font-weight: 800; margin-bottom: 5px; color: white; }
