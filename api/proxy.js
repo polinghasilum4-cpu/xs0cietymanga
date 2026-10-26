@@ -13,12 +13,9 @@ export default async function handler(req, res) {
                 if (!m.relationships) return;
                 const coverRel = m.relationships.find(r => r.type === 'cover_art');
                 if (coverRel) {
-                    // Jika API ngasih fileName langsung
                     if (coverRel.attributes && coverRel.attributes.fileName) {
                         m.coverUrl = `https://uploads.mangadex.org/covers/${m.id}/${coverRel.attributes.fileName}.512.jpg`;
-                    } 
-                    // Jika cuma ngasih ID, kita fetch manual (Jaminan 100% muncul)
-                    else if (coverRel.id) {
+                    } else if (coverRel.id) {
                         const cRes = await fetch(`https://api.mangadex.org/cover/${coverRel.id}`);
                         const cJson = await cRes.json();
                         if (cJson.data && cJson.data.attributes) {
@@ -31,12 +28,11 @@ export default async function handler(req, res) {
             if (Array.isArray(data.data)) {
                 await Promise.all(data.data.map(processManga));
                 
-                // JIKA INI LIST CHAPTER, SORTIR BERDASARKAN ANGKA
                 if (data.data.length > 0 && data.data[0].type === 'chapter') {
                     data.data.sort((a, b) => {
                         let numA = parseFloat(a.attributes.chapter) || 0;
                         let numB = parseFloat(b.attributes.chapter) || 0;
-                        return numA - numB; // 1, 2, 3, 4...
+                        return numA - numB;
                     });
                 }
             } else {
