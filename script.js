@@ -1,13 +1,19 @@
-const PROXY = '/api/manga';
+const PROXY = '/api/proxy';
+let currentLang = localStorage.getItem('lang') || 'id';
+let currentManga = null;
+let chapterFeed = []; // Simpan list chapter buat Next
+let currentChapterIndex = -1;
 
 // DOM
 const grid = document.getElementById('mangaGrid');
+const searchGrid = document.getElementById('searchGrid');
+const searchInput = document.getElementById('searchInput');
+const langSelect = document.getElementById('langSelect');
 const heroBg = document.getElementById('heroBg');
 const heroTitle = document.getElementById('heroTitle');
 const heroSynopsis = document.getElementById('heroSynopsis');
 const heroReadBtn = document.getElementById('heroReadBtn');
-const searchInput = document.getElementById('searchInput');
-const navbar = document.getElementById('navbar');
+const navbarTop = document.getElementById('navbarTop');
 
 // Modal
 const modal = document.getElementById('modal');
@@ -21,49 +27,47 @@ const chapterList = document.getElementById('chapterList');
 const reader = document.getElementById('reader');
 const closeReader = document.getElementById('closeReader');
 const readerImages = document.getElementById('readerImages');
+const readerNext = document.getElementById('readerNext');
+const nextChapterBtn = document.getElementById('nextChapterBtn');
 
-let currentManga = null;
+// 1. Set Bahasa
+langSelect.value = currentLang;
+langSelect.addEventListener('change', (e) => {
+    currentLang = e.target.value;
+    localStorage.setItem('lang', currentLang);
+    loadPopular();
+    if(currentManga) loadChapters(currentManga.id); // Reload chapter if modal open
+});
 
-// Helper: Ambil gambar dari MangaDex
-function getCoverUrl(manga) {
-    const cover = manga.relationships?.find(r => r.type === 'cover_art');
-    if (cover && cover.attributes?.fileName) {
-        return `https://uploads.mangadex.org/covers/${manga.id}/${cover.attributes.fileName}.256.jpg`;
-    }
-    return 'https://via.placeholder.com/256x384/141414/e50914?text=No+Cover';
-}
-
-// 1. Load Populer
+// 2. Load Popular
 async function loadPopular() {
+    grid.innerHTML = '<p style="color:#888; padding:20px;">Memuat data...</p>';
     try {
-        const res = await fetch(`${PROXY}?path=/manga?limit=10&includes[]=cover_art&order[followedCount]=desc`);
+        const res = await fetch(`${PROXY}?path=/manga?limit=12&includes[]=cover_art&order[followedCount]=desc`);
         const json = await res.json();
-        const mangaList = json.data || [];
+        const list = json.data || [];
         
-        if (mangaList.length > 0) {
-            // Set Hero
-            const top = mangaList[0];
-            heroBg.style.backgroundImage = `url('${getCoverUrl(top)}')`;
+        if (list.length > 0) {
+            const top = list[0];
+            heroBg.style.backgroundImage = `url('${top.coverUrl || ''}')`;
             heroTitle.textContent = top.attributes.title.en || Object.values(top.attributes.title)[0] || 'Untitled';
             heroSynopsis.textContent = top.attributes.description?.en || 'Sinopsis tidak tersedia.';
             heroReadBtn.onclick = () => openModal(top);
-            
-            // Render Grid
-            renderGrid(mangaList);
+            renderGrid(list, grid);
         }
     } catch (err) {
-        console.error('Error:', err);
-        grid.innerHTML = '<p style="color:#888;">Gagal memuat data. Pastikan server Vercel lo jalan.</p>';
+        grid.innerHTML = '<p style="color:#888; padding:20px;">Gagal memuat data.</p>';
     }
 }
 
-// 2. Render Grid
-function renderGrid(list) {
-    grid.innerHTML = list.map(m => {
+// 3. Render Grid
+function renderGrid(list, container) {
+    container.innerHTML = list.map(m => {
         const title = m.attributes.title.en || Object.values(m.attributes.title)[0] || 'Untitled';
+        const cover = m.coverUrl || 'https://via.placeholder.com/256x384/141414/e50914?text=No+Cover';
         return `
             <div class="card" onclick="window._openManga('${m.id}')">
-                <img src="${getCoverUrl(m)}" alt="${title}" loading="lazy">
+                <img src="${cover}" alt="${title}" loading="lazy">
                 <div class="card-info">
                     <h4>${title}</h4>
                     <span>${m.attributes.status || 'Unknown'}</span>
@@ -73,7 +77,7 @@ function renderGrid(list) {
     }).join('');
 }
 
-// 3. Open Modal & Load Chapter
+// 4. Open Modal
 window._openManga = async (id) => {
     try {
         const res = await fetch(`${PROXY}?path=/manga/${id}?includes[]=cover_art`);
@@ -82,85 +86,79 @@ window._openManga = async (id) => {
         if (!manga) return;
         
         currentManga = manga;
-        const title = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
-        
-        modalImg.src = getCoverUrl(manga);
-        modalTitle.textContent = title;
+        modalImg.src = manga.coverUrl || 'https://via.placeholder.com/256x384/141414/e50914?text=No+Cover';
+        modalTitle.textContent = manga.attributes.title.en || Object.values(manga.attributes.title)[0] || 'Untitled';
         modalSynopsis.textContent = manga.attributes.description?.en || 'Sinopsis tidak tersedia.';
-        
-        // Load Chapter
-        chapterList.innerHTML = '<p style="color:#888;">Memuat chapter...</p>';
-        const chapRes = await fetch(`${PROXY}?path=/manga/${id}/feed?limit=100&translatedLanguage[]=en&order[chapter]=desc`);
-        const chapJson = await chapRes.json();
-        
-        if (chapJson.data && chapJson.data.length > 0) {
-            chapterList.innerHTML = chapJson.data.map(ch => `
-                <button class="chapter-btn" onclick="window._readChapter('${ch.id}')">
-                    Chapter ${ch.attributes.chapter || '?'} ${ch.attributes.title ? '- ' + ch.attributes.title : ''}
-                </button>
-            `).join('');
-        } else {
-            chapterList.innerHTML = '<p style="color:#888;">Chapter belum tersedia.</p>';
-        }
         
         modal.classList.add('active');
         document.body.style.overflow = 'hidden';
+        
+        loadChapters(id);
     } catch (err) {
         console.error(err);
     }
 };
 
-// 4. Read Chapter (Gambar)
-window._readChapter = async (chapterId) => {
-    readerImages.innerHTML = '<p style="color:white; text-align:center;">Memuat halaman...</p>';
+// 5. Load Chapters (Filter by Language)
+async function loadChapters(mangaId) {
+    chapterList.innerHTML = '<p style="color:#888; padding:10px;">Memuat chapter...</p>';
+    try {
+        const res = await fetch(`${PROXY}?path=/manga/${mangaId}/feed?limit=100&translatedLanguage[]=${currentLang}&order[chapter]=desc`);
+        const json = await res.json();
+        chapterFeed = json.data || [];
+        
+        if (chapterFeed.length > 0) {
+            chapterList.innerHTML = chapterFeed.map((ch, idx) => `
+                <button class="chapter-btn" onclick="window._readChapter(${idx})">
+                    Ch. ${ch.attributes.chapter || '?'} ${ch.attributes.title ? '- ' + ch.attributes.title : ''}
+                </button>
+            `).join('');
+        } else {
+            chapterList.innerHTML = `<p style="color:#888; padding:10px;">Chapter bahasa ${currentLang.toUpperCase()} belum tersedia.</p>`;
+        }
+    } catch (err) {
+        chapterList.innerHTML = '<p style="color:#888; padding:10px;">Gagal memuat chapter.</p>';
+    }
+}
+
+// 6. Read Chapter & Handle Next
+window._readChapter = async (index) => {
+    if (index < 0 || index >= chapterFeed.length) return;
+    currentChapterIndex = index;
+    const ch = chapterFeed[index];
+    
+    readerImages.innerHTML = '<p style="color:white; text-align:center; margin-top:50px;">Memuat halaman...</p>';
+    readerNext.style.display = 'none';
     reader.classList.add('active');
     modal.classList.remove('active');
+    reader.scrollTop = 0;
     
     try {
-        const res = await fetch(`${PROXY}?path=/at-home/server/${chapterId}`);
+        const res = await fetch(`${PROXY}?path=/at-home/server/${ch.id}`);
         const json = await res.json();
-        
         const baseUrl = json.baseUrl;
         const hash = json.chapter.hash;
-        const pages = json.chapter.data; // array filenames
+        const pages = json.chapter.data;
         
         readerImages.innerHTML = pages.map(page => 
             `<img src="${baseUrl}/data/${hash}/${page}" alt="Page" loading="lazy">`
         ).join('');
+        
+        // Tampilkan tombol Next kalau bukan chapter terakhir
+        if (currentChapterIndex < chapterFeed.length - 1) {
+            readerNext.style.display = 'flex';
+            nextChapterBtn.onclick = () => window._readChapter(currentChapterIndex + 1);
+        } else {
+            readerNext.style.display = 'none';
+        }
+        
+        // Detect scroll abis di paling bawah
+        window.addEventListener('scroll', handleScrollEnd);
     } catch (err) {
-        readerImages.innerHTML = '<p style="color:red; text-align:center;">Gagal memuat gambar chapter.</p>';
+        readerImages.innerHTML = '<p style="color:red; text-align:center; margin-top:50px;">Gagal memuat gambar.</p>';
     }
 };
 
-// 5. Search
-let timeout;
-searchInput.addEventListener('input', (e) => {
-    clearTimeout(timeout);
-    const q = e.target.value.trim();
-    if (q.length < 3) return;
-    
-    timeout = setTimeout(async () => {
-        grid.innerHTML = '<p style="color:#888;">Mencari...</p>';
-        try {
-            const res = await fetch(`${PROXY}?path=/manga?title=${encodeURIComponent(q)}&limit=20&includes[]=cover_art`);
-            const json = await res.json();
-            if (json.data) renderGrid(json.data);
-        } catch (err) {
-            grid.innerHTML = '<p style="color:#888;">Gagal mencari.</p>';
-        }
-    }, 600);
-});
-
-// 6. Navbar Scroll
-window.addEventListener('scroll', () => {
-    if (window.scrollY > 50) navbar.classList.add('scrolled');
-    else navbar.classList.remove('scrolled');
-});
-
-// Close Handlers
-closeModal.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
-closeReader.onclick = () => { reader.classList.remove('active'); document.body.style.overflow = ''; };
-modal.addEventListener('click', (e) => { if (e.target === modal) closeModal.onclick(); });
-
-// Init
-loadPopular();
+// Deteksi scroll abis
+let scrollTimeout;
+function
